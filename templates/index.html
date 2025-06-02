@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lubrication Flow Distribution Calculator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-calculate {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+        .btn-calculate:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            color: white;
+        }
+        .results-section {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .branch-item {
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .plot-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .loading {
+            display: none;
+        }
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="text-center mb-4">
+                    <i class="fas fa-cogs text-primary"></i>
+                    Lubrication Flow Distribution Calculator
+                </h1>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Control Panel -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-sliders-h"></i> System Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- System Parameters -->
+                        <div class="mb-4">
+                            <h6 class="text-primary">System Parameters</h6>
+                            <div class="row">
+                                <div class="col-6">
+                                    <label class="form-label">Total Flow Rate (L/s)</label>
+                                    <input type="number" class="form-control" id="totalFlow" value="10.0" step="0.1">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Temperature (°C)</label>
+                                    <input type="number" class="form-control" id="temperature" value="40" step="1">
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-6">
+                                    <label class="form-label">Oil Type</label>
+                                    <select class="form-select" id="oilType">
+                                        <option value="SAE10">SAE10</option>
+                                        <option value="SAE30" selected>SAE30</option>
+                                        <option value="SAE50">SAE50</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Oil Density (kg/m³)</label>
+                                    <input type="number" class="form-control" id="oilDensity" value="900" step="10">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Branches Configuration -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="text-primary mb-0">Branches Configuration</h6>
+                                <button class="btn btn-sm btn-outline-primary" onclick="addBranch()">
+                                    <i class="fas fa-plus"></i> Add Branch
+                                </button>
+                            </div>
+                            <div id="branchesContainer">
+                                <!-- Branches will be added here dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-calculate btn-lg" onclick="calculateFlow()">
+                                <span class="loading">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    Calculating...
+                                </span>
+                                <span class="not-loading">
+                                    <i class="fas fa-calculator me-2"></i>Calculate Flow Distribution
+                                </span>
+                            </button>
+                            <div class="row">
+                                <div class="col-6">
+                                    <button class="btn btn-outline-secondary w-100" onclick="loadDefaultSystem()">
+                                        <i class="fas fa-download"></i> Load Default
+                                    </button>
+                                </div>
+                                <div class="col-6">
+                                    <button class="btn btn-outline-success w-100" onclick="exportResults()" id="exportBtn" disabled>
+                                        <i class="fas fa-file-export"></i> Export Results
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Results & Visualization</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="resultsContainer">
+                            <div class="text-center text-muted py-5">
+                                <i class="fas fa-info-circle fa-3x mb-3"></i>
+                                <h5>Configure your system and click "Calculate" to see results</h5>
+                                <p>Add branches, set parameters, and analyze your lubrication flow distribution.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Branch Modal -->
+    <div class="modal fade" id="branchModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Branch Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="branchForm">
+                        <div class="mb-3">
+                            <label class="form-label">Branch Name</label>
+                            <input type="text" class="form-control" id="branchName" required>
+                        </div>
+                        
+                        <h6 class="text-primary">Pipe Parameters</h6>
+                        <div class="row">
+                            <div class="col-4">
+                                <label class="form-label">Diameter (mm)</label>
+                                <input type="number" class="form-control" id="pipeDiameter" step="0.1" required>
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label">Length (m)</label>
+                                <input type="number" class="form-control" id="pipeLength" step="0.1" required>
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label">Roughness (mm)</label>
+                                <input type="number" class="form-control" id="pipeRoughness" value="0.15" step="0.01">
+                            </div>
+                        </div>
+                        
+                        <h6 class="text-primary mt-3">Nozzle Parameters</h6>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="hasNozzle" onchange="toggleNozzleInputs()">
+                            <label class="form-check-label" for="hasNozzle">
+                                Has Nozzle Restriction
+                            </label>
+                        </div>
+                        <div class="row" id="nozzleInputs" style="display: none;">
+                            <div class="col-6">
+                                <label class="form-label">Diameter (mm)</label>
+                                <input type="number" class="form-control" id="nozzleDiameter" step="0.1">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Discharge Coefficient</label>
+                                <input type="number" class="form-control" id="nozzleCoeff" value="0.6" step="0.01" min="0.1" max="1.0">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveBranch()">Save Branch</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let branches = [];
+        let currentBranchIndex = -1;
+        let lastResults = null;
+
+        function addBranch() {
+            currentBranchIndex = -1;
+            document.getElementById('branchForm').reset();
+            document.getElementById('hasNozzle').checked = false;
+            toggleNozzleInputs();
+            new bootstrap.Modal(document.getElementById('branchModal')).show();
+        }
+
+        function editBranch(index) {
+            currentBranchIndex = index;
+            const branch = branches[index];
+            
+            document.getElementById('branchName').value = branch.name;
+            document.getElementById('pipeDiameter').value = branch.pipe_diameter;
+            document.getElementById('pipeLength').value = branch.pipe_length;
+            document.getElementById('pipeRoughness').value = branch.pipe_roughness;
+            
+            if (branch.has_nozzle) {
+                document.getElementById('hasNozzle').checked = true;
+                document.getElementById('nozzleDiameter').value = branch.nozzle_diameter;
+                document.getElementById('nozzleCoeff').value = branch.nozzle_discharge_coeff;
+            } else {
+                document.getElementById('hasNozzle').checked = false;
+            }
+            
+            toggleNozzleInputs();
+            new bootstrap.Modal(document.getElementById('branchModal')).show();
+        }
+
+        function deleteBranch(index) {
+            if (confirm('Are you sure you want to delete this branch?')) {
+                branches.splice(index, 1);
+                updateBranchesDisplay();
+            }
+        }
+
+        function toggleNozzleInputs() {
+            const hasNozzle = document.getElementById('hasNozzle').checked;
+            const nozzleInputs = document.getElementById('nozzleInputs');
+            nozzleInputs.style.display = hasNozzle ? 'block' : 'none';
+            
+            if (!hasNozzle) {
+                document.getElementById('nozzleDiameter').value = '';
+                document.getElementById('nozzleCoeff').value = '0.6';
+            }
+        }
+
+        function saveBranch() {
+            const form = document.getElementById('branchForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const branch = {
+                name: document.getElementById('branchName').value,
+                pipe_diameter: parseFloat(document.getElementById('pipeDiameter').value),
+                pipe_length: parseFloat(document.getElementById('pipeLength').value),
+                pipe_roughness: parseFloat(document.getElementById('pipeRoughness').value),
+                has_nozzle: document.getElementById('hasNozzle').checked,
+                nozzle_diameter: document.getElementById('hasNozzle').checked ? 
+                    parseFloat(document.getElementById('nozzleDiameter').value) : null,
+                nozzle_discharge_coeff: document.getElementById('hasNozzle').checked ? 
+                    parseFloat(document.getElementById('nozzleCoeff').value) : null
+            };
+
+            if (currentBranchIndex >= 0) {
+                branches[currentBranchIndex] = branch;
+            } else {
+                branches.push(branch);
+            }
+
+            updateBranchesDisplay();
+            bootstrap.Modal.getInstance(document.getElementById('branchModal')).hide();
+        }
+
+        function updateBranchesDisplay() {
+            const container = document.getElementById('branchesContainer');
+            container.innerHTML = '';
+
+            branches.forEach((branch, index) => {
+                const branchDiv = document.createElement('div');
+                branchDiv.className = 'branch-item';
+                branchDiv.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">${branch.name}</h6>
+                            <small class="text-muted">
+                                Pipe: Ø${branch.pipe_diameter}mm × ${branch.pipe_length}m
+                                ${branch.has_nozzle ? ` | Nozzle: Ø${branch.nozzle_diameter}mm` : ''}
+                            </small>
+                        </div>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="editBranch(${index})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteBranch(${index})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(branchDiv);
+            });
+        }
+
+        function calculateFlow() {
+            if (branches.length === 0) {
+                alert('Please add at least one branch before calculating.');
+                return;
+            }
+
+            // Show loading state
+            document.querySelector('.loading').style.display = 'inline';
+            document.querySelector('.not-loading').style.display = 'none';
+
+            const data = {
+                total_flow: parseFloat(document.getElementById('totalFlow').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                oil_type: document.getElementById('oilType').value,
+                oil_density: parseFloat(document.getElementById('oilDensity').value),
+                branches: branches
+            };
+
+            fetch('/api/calculate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading state
+                document.querySelector('.loading').style.display = 'none';
+                document.querySelector('.not-loading').style.display = 'inline';
+
+                if (data.success) {
+                    lastResults = data;
+                    displayResults(data);
+                    document.getElementById('exportBtn').disabled = false;
+                } else {
+                    alert('Calculation failed: ' + data.error);
+                }
+            })
+            .catch(error => {
+                // Hide loading state
+                document.querySelector('.loading').style.display = 'none';
+                document.querySelector('.not-loading').style.display = 'inline';
+                
+                console.error('Error:', error);
+                alert('An error occurred during calculation.');
+            });
+        }
+
+        function displayResults(data) {
+            const container = document.getElementById('resultsContainer');
+            
+            let html = `
+                <div class="results-section">
+                    <h5 class="text-primary mb-3">
+                        <i class="fas fa-check-circle text-success"></i> 
+                        Calculation Results
+                    </h5>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6>System Properties</h6>
+                                    <ul class="list-unstyled mb-0">
+                                        <li><strong>Temperature:</strong> ${data.solution_info.temperature}°C</li>
+                                        <li><strong>Viscosity:</strong> ${data.solution_info.viscosity.toFixed(6)} Pa·s</li>
+                                        <li><strong>Converged:</strong> ${data.solution_info.converged ? 'Yes' : 'No'}</li>
+                                        <li><strong>Iterations:</strong> ${data.solution_info.iterations}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6>Flow Summary</h6>
+                                    <ul class="list-unstyled mb-0">
+                                        <li><strong>Total Flow:</strong> ${data.total_flow.toFixed(2)} L/s</li>
+                                        <li><strong>Branches:</strong> ${data.branches.length}</li>
+                                        <li><strong>Max Pressure Drop:</strong> ${Math.max(...data.solution_info.pressure_drops).toFixed(0)} Pa</li>
+                                        <li><strong>Min Pressure Drop:</strong> ${Math.min(...data.solution_info.pressure_drops).toFixed(0)} Pa</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Branch Name</th>
+                                    <th>Flow Rate (L/s)</th>
+                                    <th>Pressure Drop (Pa)</th>
+                                    <th>Reynolds Number</th>
+                                    <th>Flow Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+
+            data.branches.forEach((branch, index) => {
+                const flowRate = data.branch_flows[index];
+                const pressureDrop = data.solution_info.pressure_drops[index];
+                const reynolds = data.solution_info.reynolds_numbers[index];
+                
+                let flowType = 'Laminar';
+                if (reynolds > 4000) flowType = 'Turbulent';
+                else if (reynolds > 2300) flowType = 'Transition';
+
+                html += `
+                    <tr>
+                        <td><strong>${branch.name}</strong></td>
+                        <td>${flowRate.toFixed(3)}</td>
+                        <td>${pressureDrop.toFixed(1)}</td>
+                        <td>${reynolds.toFixed(0)}</td>
+                        <td><span class="badge bg-${flowType === 'Laminar' ? 'success' : flowType === 'Transition' ? 'warning' : 'danger'}">${flowType}</span></td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            if (data.plots) {
+                html += `
+                    <div class="plot-container">
+                        <h5 class="text-primary mb-3">Flow Distribution Visualization</h5>
+                        <img src="data:image/png;base64,${data.plots}" class="img-fluid" alt="Flow Distribution Charts">
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function exportResults() {
+            if (!lastResults) {
+                alert('No results to export. Please calculate first.');
+                return;
+            }
+
+            fetch('/api/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(lastResults)
+            })
+            .then(response => response.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'lubrication_flow_results.txt';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to export results.');
+            });
+        }
+
+        function loadDefaultSystem() {
+            branches = [
+                {
+                    name: "Main Bearing",
+                    pipe_diameter: 50,
+                    pipe_length: 5.0,
+                    pipe_roughness: 0.15,
+                    has_nozzle: true,
+                    nozzle_diameter: 8,
+                    nozzle_discharge_coeff: 0.6
+                },
+                {
+                    name: "Aux Bearing",
+                    pipe_diameter: 40,
+                    pipe_length: 6.0,
+                    pipe_roughness: 0.15,
+                    has_nozzle: true,
+                    nozzle_diameter: 6,
+                    nozzle_discharge_coeff: 0.6
+                },
+                {
+                    name: "Gear Box",
+                    pipe_diameter: 30,
+                    pipe_length: 7.0,
+                    pipe_roughness: 0.15,
+                    has_nozzle: true,
+                    nozzle_diameter: 4,
+                    nozzle_discharge_coeff: 0.6
+                },
+                {
+                    name: "Cooler Return",
+                    pipe_diameter: 25,
+                    pipe_length: 4.0,
+                    pipe_roughness: 0.15,
+                    has_nozzle: false,
+                    nozzle_diameter: null,
+                    nozzle_discharge_coeff: null
+                }
+            ];
+            updateBranchesDisplay();
+        }
+
+        // Load default system on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDefaultSystem();
+        });
+    </script>
+</body>
+</html>
