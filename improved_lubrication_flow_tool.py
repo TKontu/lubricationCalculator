@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Improved Lubrication Piping Flow Distribution Calculation Tool
+AImproved Lubrication Piping Flow Distribution Calculation Tool
 
 This tool calculates the flow distribution in a piping system with branches and nozzles
 using proper hydraulic network analysis principles.

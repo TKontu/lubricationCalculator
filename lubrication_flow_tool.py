@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lubrication Piping Flow Distribution Calculation Tool
+ALubrication Piping Flow Distribution Calculation Tool
 
 This tool calculates the flow distribution in a piping system with branches and nozzles.
 It takes into account:

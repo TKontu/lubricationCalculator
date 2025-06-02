@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Web-based Lubrication Flow Distribution Calculator
+AWeb-based Lubrication Flow Distribution Calculator
 
 A modern web application for lubrication piping flow distribution calculations.
 Built with Flask and provides an interactive interface for:

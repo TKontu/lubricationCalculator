@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lubrication Flow Distribution GUI Application
+ALubrication Flow Distribution GUI Application
 
 A comprehensive graphical user interface for the lubrication piping flow 
 distribution calculation tool. Features include:

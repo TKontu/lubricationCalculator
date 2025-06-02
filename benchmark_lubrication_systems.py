@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Benchmark and Validation Tool for Lubrication Flow Distribution Calculators
+ABenchmark and Validation Tool for Lubrication Flow Distribution Calculators
 
 This tool provides comprehensive benchmarking and validation of the lubrication
 flow distribution calculators with various system configurations.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive Test Suite for Lubrication Flow Distribution Calculator
+AComprehensive Test Suite for Lubrication Flow Distribution Calculator
 
 This test suite validates the calculation engine with:
 - Unit tests for individual components

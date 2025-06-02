@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Advanced Lubrication Piping Flow Distribution Calculation Tool
+AAdvanced Lubrication Piping Flow Distribution Calculation Tool
 
 This enhanced version provides improved reliability for larger and complex systems
 with multiple branches, different nozzle types, and robust numerical methods.

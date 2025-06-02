@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Demonstration of Advanced Lubrication Flow Distribution Calculator Features
+ADemonstration of Advanced Lubrication Flow Distribution Calculator Features
 
 This script demonstrates the enhanced capabilities of the advanced calculator
 including different nozzle types, complex systems, and robust numerical methods.
