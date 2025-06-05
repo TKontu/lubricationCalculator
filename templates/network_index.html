@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network-Based Lubrication Flow Distribution Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr 400px;
+            gap: 20px;
+            padding: 20px;
+            min-height: 800px;
+        }
+
+        .control-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        .control-section {
+            margin-bottom: 25px;
+        }
+
+        .control-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #3498db;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 2px;
+            transition: background 0.3s;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-warning {
+            background: #f39c12;
+        }
+
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .network-display {
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .network-display h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+
+        .network-plot {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .results-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        .results-panel h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #27ae60;
+        }
+
+        .results-text {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .results-plots {
+            margin-top: 20px;
+        }
+
+        .results-plots img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .network-info {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-top: 10px;
+        }
+
+        .status-message {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: 600;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 500px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-header h3 {
+            color: #2c3e50;
+        }
+
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .validation-status {
+            padding: 8px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Network-Based Lubrication Flow Calculator</h1>
+            <p>Advanced tree-like branching with component-based system building</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <!-- System Parameters -->
+                <div class="control-section">
+                    <h3>System Parameters</h3>
+                    <div class="form-group">
+                        <label for="totalFlow">Total Flow Rate (L/s):</label>
+                        <input type="number" id="totalFlow" value="15.0" step="0.1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="temperature">Temperature (°C):</label>
+                        <input type="number" id="temperature" value="40" step="1" min="-50" max="200">
+                    </div>
+                    <div class="form-group">
+                        <label for="oilType">Oil Type:</label>
+                        <select id="oilType">
+                            <option value="SAE10">SAE10</option>
+                            <option value="SAE20">SAE20</option>
+                            <option value="SAE30" selected>SAE30</option>
+                            <option value="SAE40">SAE40</option>
+                            <option value="SAE50">SAE50</option>
+                            <option value="SAE60">SAE60</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="oilDensity">Oil Density (kg/m³):</label>
+                        <input type="number" id="oilDensity" value="900" step="1" min="700" max="1200">
+                    </div>
+                </div>
+
+                <!-- Network Building -->
+                <div class="control-section">
+                    <h3>Network Building</h3>
+                    <div class="button-group">
+                        <button class="btn btn-small" onclick="showAddNodeModal()">Add Node</button>
+                        <button class="btn btn-small" onclick="showAddComponentModal()">Add Component</button>
+                        <button class="btn btn-small" onclick="setInletNode()">Set Inlet</button>
+                        <button class="btn btn-small" onclick="addOutletNode()">Add Outlet</button>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-warning btn-small" onclick="validateNetwork()">Validate</button>
+                        <button class="btn btn-danger btn-small" onclick="clearNetwork()">Clear</button>
+                    </div>
+                    <div id="validationStatus" class="validation-status" style="display: none;"></div>
+                </div>
+
+                <!-- Network Information -->
+                <div class="control-section">
+                    <h3>Network Information</h3>
+                    <div id="networkInfo" class="network-info">No network loaded</div>
+                </div>
+
+                <!-- Actions -->
+                <div class="control-section">
+                    <h3>Actions</h3>
+                    <button class="btn btn-success" onclick="calculateFlow()" style="width: 100%; margin-bottom: 10px;">
+                        Calculate Flow Distribution
+                    </button>
+                    <div class="button-group">
+                        <button class="btn" onclick="loadExample()">Load Example</button>
+                        <button class="btn" onclick="exportResults()">Export Results</button>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                <div id="statusMessages"></div>
+            </div>
+
+            <!-- Network Display -->
+            <div class="network-display">
+                <h3>Network Topology</h3>
+                <div id="networkPlot">
+                    <p style="color: #666; padding: 40px;">
+                        No network visualization available.<br>
+                        Click "Load Example" to start or build your own network.
+                    </p>
+                </div>
+                <div class="loading" id="networkLoading">
+                    <div class="spinner"></div>
+                    <p>Generating network visualization...</p>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="results-panel">
+                <h3>Flow Distribution Results</h3>
+                <div id="resultsText" class="results-text">No results available. Please calculate flow distribution first.</div>
+                
+                <div class="results-plots" id="resultsPlots" style="display: none;">
+                    <h4 style="margin: 15px 0 10px 0; color: #2c3e50;">Analysis Charts</h4>
+                    <div id="resultsChartsContainer"></div>
+                </div>
+                
+                <div class="loading" id="resultsLoading">
+                    <div class="spinner"></div>
+                    <p>Calculating flow distribution...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Node Modal -->
+    <div id="addNodeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Node</h3>
+                <span class="close" onclick="closeModal('addNodeModal')">&times;</span>
+            </div>
+            <div class="form-group">
+                <label for="nodeName">Node Name:</label>
+                <input type="text" id="nodeName" placeholder="Enter node name">
+            </div>
+            <div class="form-group">
+                <label for="nodeElevation">Elevation (m):</label>
+                <input type="number" id="nodeElevation" value="0" step="0.1">
+            </div>
+            <div class="button-group">
+                <button class="btn btn-success" onclick="addNode()">Add Node</button>
+                <button class="btn" onclick="closeModal('addNodeModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Component Modal -->
+    <div id="addComponentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Component</h3>
+                <span class="close" onclick="closeModal('addComponentModal')">&times;</span>
+            </div>
+            <div class="form-group">
+                <label for="fromNode">From Node:</label>
+                <select id="fromNode"></select>
+            </div>
+            <div class="form-group">
+                <label for="toNode">To Node:</label>
+                <select id="toNode"></select>
+            </div>
+            <div class="form-group">
+                <label for="componentType">Component Type:</label>
+                <select id="componentType" onchange="updateComponentFields()">
+                    <option value="channel">Channel (Pipe)</option>
+                    <option value="connector">Connector (Junction)</option>
+                    <option value="nozzle">Nozzle (Restriction)</option>
+                </select>
+            </div>
+            
+            <!-- Channel Fields -->
+            <div id="channelFields">
+                <div class="form-group">
+                    <label for="channelDiameter">Diameter (mm):</label>
+                    <input type="number" id="channelDiameter" value="50" step="0.1" min="0.1">
+                </div>
+                <div class="form-group">
+                    <label for="channelLength">Length (m):</label>
+                    <input type="number" id="channelLength" value="10" step="0.1" min="0.1">
+                </div>
+                <div class="form-group">
+                    <label for="channelRoughness">Roughness (mm):</label>
+                    <input type="number" id="channelRoughness" value="0.15" step="0.01" min="0.001">
+                </div>
+            </div>
+
+            <!-- Connector Fields -->
+            <div id="connectorFields" style="display: none;">
+                <div class="form-group">
+                    <label for="connectorType">Connector Type:</label>
+                    <select id="connectorType">
+                        <option value="T_JUNCTION">T-Junction</option>
+                        <option value="X_JUNCTION">X-Junction</option>
+                        <option value="ELBOW_90">90° Elbow</option>
+                        <option value="REDUCER">Reducer</option>
+                        <option value="STRAIGHT">Straight</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="connectorDiameter">Diameter (mm):</label>
+                    <input type="number" id="connectorDiameter" value="50" step="0.1" min="0.1">
+                </div>
+            </div>
+
+            <!-- Nozzle Fields -->
+            <div id="nozzleFields" style="display: none;">
+                <div class="form-group">
+                    <label for="nozzleType">Nozzle Type:</label>
+                    <select id="nozzleType">
+                        <option value="SHARP_EDGED">Sharp-Edged</option>
+                        <option value="ROUNDED">Rounded</option>
+                        <option value="VENTURI">Venturi</option>
+                        <option value="FLOW_NOZZLE">Flow Nozzle</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="nozzleDiameter">Diameter (mm):</label>
+                    <input type="number" id="nozzleDiameter" value="8" step="0.1" min="0.1">
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-success" onclick="addComponent()">Add Component</button>
+                <button class="btn" onclick="closeModal('addComponentModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentNetwork = null;
+        let selectedNodeId = null;
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            updateNetworkInfo();
+        });
+
+        // Modal functions
+        function showAddNodeModal() {
+            document.getElementById('addNodeModal').style.display = 'block';
+            document.getElementById('nodeName').value = '';
+            document.getElementById('nodeElevation').value = '0';
+        }
+
+        function showAddComponentModal() {
+            if (!currentNetwork || currentNetwork.nodes.length < 2) {
+                showMessage('Need at least 2 nodes to add a component', 'error');
+                return;
+            }
+            
+            updateNodeSelectors();
+            document.getElementById('addComponentModal').style.display = 'block';
+            updateComponentFields();
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function updateComponentFields() {
+            const componentType = document.getElementById('componentType').value;
+            
+            document.getElementById('channelFields').style.display = componentType === 'channel' ? 'block' : 'none';
+            document.getElementById('connectorFields').style.display = componentType === 'connector' ? 'block' : 'none';
+            document.getElementById('nozzleFields').style.display = componentType === 'nozzle' ? 'block' : 'none';
+        }
+
+        function updateNodeSelectors() {
+            const fromSelect = document.getElementById('fromNode');
+            const toSelect = document.getElementById('toNode');
+            
+            fromSelect.innerHTML = '';
+            toSelect.innerHTML = '';
+            
+            if (currentNetwork && currentNetwork.nodes) {
+                currentNetwork.nodes.forEach(node => {
+                    const option1 = new Option(node.name, node.id);
+                    const option2 = new Option(node.name, node.id);
+                    fromSelect.add(option1);
+                    toSelect.add(option2);
+                });
+            }
+        }
+
+        // Network building functions
+        async function addNode() {
+            const name = document.getElementById('nodeName').value.trim();
+            const elevation = parseFloat(document.getElementById('nodeElevation').value);
+            
+            if (!name) {
+                showMessage('Please enter a node name', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/add_node', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        network: currentNetwork || { name: 'User Network', nodes: [], connections: [], inlet_node_id: null, outlet_node_ids: [] },
+                        name: name,
+                        elevation: elevation
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentNetwork = result.network;
+                    updateNetworkInfo();
+                    updateNetworkVisualization();
+                    closeModal('addNodeModal');
+                    showMessage(`Node "${name}" added successfully`, 'success');
+                } else {
+                    showMessage(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error adding node: ${error.message}`, 'error');
+            }
+        }
+
+        async function addComponent() {
+            const fromNodeId = document.getElementById('fromNode').value;
+            const toNodeId = document.getElementById('toNode').value;
+            const componentType = document.getElementById('componentType').value;
+            
+            if (!fromNodeId || !toNodeId) {
+                showMessage('Please select both from and to nodes', 'error');
+                return;
+            }
+            
+            if (fromNodeId === toNodeId) {
+                showMessage('From and to nodes must be different', 'error');
+                return;
+            }
+            
+            let component = { type: componentType };
+            
+            if (componentType === 'channel') {
+                component.diameter = parseFloat(document.getElementById('channelDiameter').value);
+                component.length = parseFloat(document.getElementById('channelLength').value);
+                component.roughness = parseFloat(document.getElementById('channelRoughness').value);
+            } else if (componentType === 'connector') {
+                component.connector_type = document.getElementById('connectorType').value;
+                component.diameter = parseFloat(document.getElementById('connectorDiameter').value);
+            } else if (componentType === 'nozzle') {
+                component.nozzle_type = document.getElementById('nozzleType').value;
+                component.diameter = parseFloat(document.getElementById('nozzleDiameter').value);
+            }
+            
+            try {
+                const response = await fetch('/api/add_component', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        network: currentNetwork,
+                        from_node_id: fromNodeId,
+                        to_node_id: toNodeId,
+                        component: component
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentNetwork = result.network;
+                    updateNetworkInfo();
+                    updateNetworkVisualization();
+                    closeModal('addComponentModal');
+                    showMessage(`${componentType} added successfully`, 'success');
+                } else {
+                    showMessage(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error adding component: ${error.message}`, 'error');
+            }
+        }
+
+        async function setInletNode() {
+            if (!selectedNodeId) {
+                showMessage('Please select a node first by clicking on it in the network visualization', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/set_inlet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        network: currentNetwork,
+                        node_id: selectedNodeId
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentNetwork = result.network;
+                    updateNetworkInfo();
+                    updateNetworkVisualization();
+                    showMessage('Inlet node set successfully', 'success');
+                } else {
+                    showMessage(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error setting inlet: ${error.message}`, 'error');
+            }
+        }
+
+        async function addOutletNode() {
+            if (!selectedNodeId) {
+                showMessage('Please select a node first by clicking on it in the network visualization', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/add_outlet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        network: currentNetwork,
+                        node_id: selectedNodeId
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentNetwork = result.network;
+                    updateNetworkInfo();
+                    updateNetworkVisualization();
+                    showMessage('Outlet node added successfully', 'success');
+                } else {
+                    showMessage(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error adding outlet: ${error.message}`, 'error');
+            }
+        }
+
+        async function validateNetwork() {
+            if (!currentNetwork) {
+                showMessage('No network to validate', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/validate_network', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ network: currentNetwork })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const statusDiv = document.getElementById('validationStatus');
+                    statusDiv.style.display = 'block';
+                    
+                    if (result.is_valid) {
+                        statusDiv.className = 'validation-status status-success';
+                        statusDiv.textContent = '✓ Network is valid';
+                    } else {
+                        statusDiv.className = 'validation-status status-error';
+                        statusDiv.textContent = '✗ Validation errors:\n' + result.errors.join('\n');
+                    }
+                } else {
+                    showMessage(`Validation error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error validating network: ${error.message}`, 'error');
+            }
+        }
+
+        function clearNetwork() {
+            if (confirm('Are you sure you want to clear the entire network?')) {
+                currentNetwork = null;
+                selectedNodeId = null;
+                updateNetworkInfo();
+                document.getElementById('networkPlot').innerHTML = '<p style="color: #666; padding: 40px;">No network visualization available.<br>Click "Load Example" to start or build your own network.</p>';
+                document.getElementById('resultsText').textContent = 'No results available. Please calculate flow distribution first.';
+                document.getElementById('resultsPlots').style.display = 'none';
+                document.getElementById('validationStatus').style.display = 'none';
+                showMessage('Network cleared', 'success');
+            }
+        }
+
+        // Calculation functions
+        async function calculateFlow() {
+            if (!currentNetwork) {
+                showMessage('No network to calculate', 'warning');
+                return;
+            }
+            
+            // Show loading
+            document.getElementById('resultsLoading').style.display = 'block';
+            
+            const systemParams = {
+                total_flow: parseFloat(document.getElementById('totalFlow').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                oil_type: document.getElementById('oilType').value,
+                oil_density: parseFloat(document.getElementById('oilDensity').value)
+            };
+            
+            try {
+                const response = await fetch('/api/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        network: currentNetwork,
+                        system_params: systemParams
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayResults(result);
+                    updateNetworkVisualization(result.connection_flows);
+                    showMessage('Flow calculation completed successfully', 'success');
+                } else {
+                    showMessage(`Calculation error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error calculating flow: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('resultsLoading').style.display = 'none';
+            }
+        }
+
+        async function loadExample() {
+            try {
+                const response = await fetch('/api/create_example', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentNetwork = result.network;
+                    
+                    // Update system parameters
+                    const params = result.network.system_params;
+                    document.getElementById('totalFlow').value = params.total_flow;
+                    document.getElementById('temperature').value = params.temperature;
+                    document.getElementById('oilType').value = params.oil_type;
+                    document.getElementById('oilDensity').value = params.oil_density;
+                    
+                    updateNetworkInfo();
+                    updateNetworkVisualization();
+                    showMessage('Example network loaded successfully', 'success');
+                } else {
+                    showMessage(`Error loading example: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Error loading example: ${error.message}`, 'error');
+            }
+        }
+
+        // Display functions
+        function updateNetworkInfo() {
+            const infoDiv = document.getElementById('networkInfo');
+            
+            if (!currentNetwork) {
+                infoDiv.textContent = 'No network loaded';
+                return;
+            }
+            
+            let info = `Network: ${currentNetwork.name}\n`;
+            info += `Nodes: ${currentNetwork.nodes.length}\n`;
+            info += `Connections: ${currentNetwork.connections.length}\n`;
+            info += `Inlet: ${currentNetwork.inlet_node_id ? 'Set' : 'None'}\n`;
+            info += `Outlets: ${currentNetwork.outlet_node_ids.length}\n\n`;
+            
+            if (selectedNodeId) {
+                const selectedNode = currentNetwork.nodes.find(n => n.id === selectedNodeId);
+                if (selectedNode) {
+                    info += `Selected: ${selectedNode.name}\n`;
+                    info += `Elevation: ${selectedNode.elevation} m`;
+                }
+            }
+            
+            infoDiv.textContent = info;
+        }
+
+        async function updateNetworkVisualization(connectionFlows = null) {
+            if (!currentNetwork) {
+                return;
+            }
+            
+            document.getElementById('networkLoading').style.display = 'block';
+            
+            try {
+                // For now, just show network info since we can't easily generate plots in browser
+                const plotDiv = document.getElementById('networkPlot');
+                
+                let html = '<div style="text-align: left; padding: 20px; background: #f8f9fa; border-radius: 8px;">';
+                html += `<h4>Network: ${currentNetwork.name}</h4>`;
+                html += `<p><strong>Nodes:</strong> ${currentNetwork.nodes.length}</p>`;
+                html += `<p><strong>Connections:</strong> ${currentNetwork.connections.length}</p>`;
+                
+                if (currentNetwork.nodes.length > 0) {
+                    html += '<h5>Nodes:</h5><ul>';
+                    currentNetwork.nodes.forEach(node => {
+                        const isInlet = node.id === currentNetwork.inlet_node_id;
+                        const isOutlet = currentNetwork.outlet_node_ids.includes(node.id);
+                        const isSelected = node.id === selectedNodeId;
+                        
+                        let nodeType = '';
+                        if (isInlet) nodeType += ' [INLET]';
+                        if (isOutlet) nodeType += ' [OUTLET]';
+                        if (isSelected) nodeType += ' [SELECTED]';
+                        
+                        html += `<li onclick="selectNode('${node.id}')" style="cursor: pointer; padding: 2px; ${isSelected ? 'background: #ffffcc;' : ''}">${node.name} (h=${node.elevation}m)${nodeType}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                if (currentNetwork.connections.length > 0) {
+                    html += '<h5>Connections:</h5><ul>';
+                    currentNetwork.connections.forEach(conn => {
+                        const fromNode = currentNetwork.nodes.find(n => n.id === conn.from_node_id);
+                        const toNode = currentNetwork.nodes.find(n => n.id === conn.to_node_id);
+                        const comp = conn.component;
+                        
+                        let flowInfo = '';
+                        if (connectionFlows && connectionFlows[comp.id]) {
+                            flowInfo = ` (${connectionFlows[comp.id].toFixed(2)} L/s)`;
+                        }
+                        
+                        html += `<li>${fromNode.name} → ${toNode.name}: ${comp.type}${flowInfo}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                html += '</div>';
+                plotDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error updating visualization:', error);
+            } finally {
+                document.getElementById('networkLoading').style.display = 'none';
+            }
+        }
+
+        function selectNode(nodeId) {
+            selectedNodeId = nodeId;
+            updateNetworkInfo();
+            updateNetworkVisualization();
+        }
+
+        function displayResults(result) {
+            const resultsDiv = document.getElementById('resultsText');
+            
+            let text = 'NETWORK FLOW DISTRIBUTION RESULTS\n';
+            text += '='.repeat(60) + '\n\n';
+            
+            const info = result.solution_info;
+            text += `Temperature: ${info.temperature}°C\n`;
+            text += `Oil Type: ${document.getElementById('oilType').value}\n`;
+            text += `Oil Density: ${document.getElementById('oilDensity').value} kg/m³\n`;
+            text += `Dynamic Viscosity: ${info.viscosity.toFixed(6)} Pa·s\n`;
+            text += `Total Flow Rate: ${result.total_flow.toFixed(1)} L/s\n`;
+            text += `Converged: ${info.converged} (in ${info.iterations} iterations)\n\n`;
+            
+            text += 'Component'.padEnd(20) + 'Flow Rate'.padEnd(12) + '\n';
+            text += 'ID'.padEnd(20) + '(L/s)'.padEnd(12) + '\n';
+            text += '-'.repeat(35) + '\n';
+            
+            for (const [compId, flow] of Object.entries(result.connection_flows)) {
+                text += compId.substring(0, 20).padEnd(20) + flow.toFixed(3).padEnd(12) + '\n';
+            }
+            
+            text += '-'.repeat(35) + '\n';
+            
+            text += '\nNode Pressures:\n';
+            text += 'Node ID'.padEnd(20) + 'Pressure (Pa)'.padEnd(15) + '\n';
+            text += '-'.repeat(35) + '\n';
+            
+            for (const [nodeId, pressure] of Object.entries(info.node_pressures)) {
+                text += nodeId.substring(0, 20).padEnd(20) + pressure.toFixed(1).padEnd(15) + '\n';
+            }
+            
+            resultsDiv.textContent = text;
+            
+            // Show results plots section
+            document.getElementById('resultsPlots').style.display = 'block';
+            
+            // Display plots if available
+            if (result.network_plot) {
+                const chartsContainer = document.getElementById('resultsChartsContainer');
+                chartsContainer.innerHTML = `<img src="data:image/png;base64,${result.network_plot}" alt="Network Plot" style="max-width: 100%; margin-bottom: 10px;">`;
+                
+                if (result.results_plots) {
+                    chartsContainer.innerHTML += `<img src="data:image/png;base64,${result.results_plots}" alt="Results Plots" style="max-width: 100%;">`;
+                }
+            }
+        }
+
+        function exportResults() {
+            const resultsText = document.getElementById('resultsText').textContent;
+            if (resultsText === 'No results available. Please calculate flow distribution first.') {
+                showMessage('No results to export. Please calculate first.', 'warning');
+                return;
+            }
+            
+            const blob = new Blob([resultsText], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'network_lubrication_flow_results.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showMessage('Results exported successfully', 'success');
+        }
+
+        function showMessage(message, type) {
+            const messagesDiv = document.getElementById('statusMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `status-message status-${type}`;
+            messageDiv.textContent = message;
+            
+            messagesDiv.appendChild(messageDiv);
+            
+            // Remove message after 5 seconds
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 5000);
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const modals = document.getElementsByClassName('modal');
+            for (let modal of modals) {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
