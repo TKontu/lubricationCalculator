@@ -88,6 +88,11 @@ class FlowComponent:
     def validate_flow_rate(self, flow_rate: float) -> bool:
         """Validate if the flow rate is acceptable for this component"""
         return flow_rate >= 0
+    
+    def get_max_recommended_velocity(self) -> float:
+        """Get maximum recommended velocity for this component type"""
+        # Default conservative velocity limit
+        return 10.0  # m/s
 
 
 class Channel(FlowComponent):
@@ -272,6 +277,28 @@ class Nozzle(FlowComponent):
     def get_flow_area(self) -> float:
         """Get the flow area"""
         return math.pi * (self.diameter / 2) ** 2
+    
+    def get_max_recommended_velocity(self) -> float:
+        """Get maximum recommended velocity for nozzles"""
+        # Nozzles can handle higher velocities than pipes
+        velocity_limits = {
+            NozzleType.SHARP_EDGED: 15.0,    # m/s
+            NozzleType.ROUNDED: 20.0,        # m/s  
+            NozzleType.VENTURI: 30.0,        # m/s
+            NozzleType.FLOW_NOZZLE: 25.0     # m/s
+        }
+        return velocity_limits.get(self.nozzle_type, 15.0)
+    
+    def validate_flow_rate(self, flow_rate: float) -> bool:
+        """Validate if the flow rate is acceptable for this nozzle"""
+        if flow_rate <= 0:
+            return True  # Zero flow is always acceptable
+        
+        area = self.get_flow_area()
+        velocity = flow_rate / area
+        max_velocity = self.get_max_recommended_velocity()
+        
+        return velocity <= max_velocity
     
     def calculate_pressure_drop(self, flow_rate: float, fluid_properties: Dict) -> float:
         """Calculate pressure drop using orifice flow equation"""
@@ -551,25 +578,54 @@ class NetworkFlowSolver:
                 
                 path_pressure_drops.append(total_dp)
             
-            # Target pressure drop (average of all paths)
-            if len(path_pressure_drops) > 1:
-                target_dp = np.mean(path_pressure_drops)
+            # For proper hydraulic balancing, outlet pressures should be equal
+            # Calculate current outlet pressures for each path
+            outlet_pressures = []
+            for i, path in enumerate(paths):
+                # Outlet pressure = Inlet pressure - Total pressure drop
+                outlet_pressure = 0.0 - path_pressure_drops[i]  # Inlet is at 0 Pa reference
+                outlet_pressures.append(outlet_pressure)
+            
+            # Target outlet pressure (average of current outlet pressures)
+            if len(outlet_pressures) > 1:
+                # Use weighted average based on flow rates
+                path_flows = [connection_flows[path[-1].component.id] for path in paths]
+                total_flow = sum(path_flows)
+                
+                if total_flow > 0:
+                    weights = [flow / total_flow for flow in path_flows]
+                    target_outlet_pressure = sum(p * weight for p, weight in zip(outlet_pressures, weights))
+                else:
+                    target_outlet_pressure = np.mean(outlet_pressures)
             else:
-                target_dp = path_pressure_drops[0]
+                target_outlet_pressure = outlet_pressures[0]
+            
+            # Convert target outlet pressure back to target pressure drops
+            target_pressure_drops = []
+            for i, path in enumerate(paths):
+                target_dp = 0.0 - target_outlet_pressure  # Target total pressure drop
+                target_pressure_drops.append(target_dp)
             
             # Adjust flows to equalize pressure drops
             new_path_flows = []
             total_new_flow = 0.0
             
-            for i, (path, current_dp) in enumerate(zip(paths, path_pressure_drops)):
+            for i, (path, current_dp, target_dp) in enumerate(zip(paths, path_pressure_drops, target_pressure_drops)):
                 if current_dp > 0:
-                    # Estimate new flow rate to achieve target pressure drop
-                    # Using simplified relationship: ΔP ∝ Q^n where n ≈ 2 for turbulent flow
-                    current_path_flow = sum(connection_flows[conn.component.id] for conn in path) / len(path)
+                    # Get current flow rate for this path (all components in series should have same flow)
+                    current_path_flow = connection_flows[path[-1].component.id]  # Use outlet component flow
                     
                     if current_path_flow > 0:
+                        # For hydraulic systems: ΔP ∝ Q^n where n ≈ 2 for turbulent flow
+                        # But for nozzles, the relationship is more complex
                         flow_ratio = (target_dp / current_dp) ** 0.5  # Square root for turbulent flow
                         new_flow = current_path_flow * flow_ratio
+                        
+                        # Apply adaptive damping to prevent oscillations
+                        # Use stronger damping for larger changes
+                        change_ratio = abs(new_flow - current_path_flow) / current_path_flow
+                        damping = 0.9 if change_ratio > 0.5 else 0.7
+                        new_flow = damping * new_flow + (1 - damping) * current_path_flow
                     else:
                         new_flow = total_flow_rate / len(paths)
                 else:
@@ -583,14 +639,19 @@ class NetworkFlowSolver:
                 normalization_factor = total_flow_rate / total_new_flow
                 new_path_flows = [flow * normalization_factor for flow in new_path_flows]
             
-            # Update connection flows
+            # Update connection flows using a simpler approach
             new_connection_flows = {conn.component.id: 0.0 for conn in network.connections}
             
-            # For each path, assign the path flow to each connection in the path
-            for path, path_flow in zip(paths, new_path_flows):
-                for connection in path:
-                    # For shared connections (like main trunk), sum the flows
-                    new_connection_flows[connection.component.id] += path_flow
+            # Calculate flows for each connection based on which paths use it
+            for connection in network.connections:
+                total_flow_through_connection = 0.0
+                
+                # Find all paths that use this connection
+                for i, path in enumerate(paths):
+                    if connection in path:
+                        total_flow_through_connection += new_path_flows[i]
+                
+                new_connection_flows[connection.component.id] = total_flow_through_connection
             
             # Check convergence
             max_change = 0.0
@@ -611,6 +672,9 @@ class NetworkFlowSolver:
         
         # Calculate final pressure drops and node pressures
         self._calculate_final_results(network, connection_flows, fluid_properties, solution_info)
+        
+        # Validate results
+        self._validate_solution(network, connection_flows, solution_info)
         
         return connection_flows, solution_info
     
@@ -663,6 +727,43 @@ class NetworkFlowSolver:
             dp = component.calculate_pressure_drop(flow_rate, fluid_properties)
             solution_info['pressure_drops'][component.id] = dp
     
+    def _validate_solution(self, network: FlowNetwork, connection_flows: Dict[str, float],
+                          solution_info: Dict):
+        """Validate the solution for potential issues"""
+        warnings = []
+        
+        # Check for excessive velocities
+        for connection in network.connections:
+            component = connection.component
+            flow_rate = connection_flows[component.id]
+            
+            if hasattr(component, 'validate_flow_rate') and not component.validate_flow_rate(flow_rate):
+                area = component.get_flow_area()
+                velocity = flow_rate / area if area > 0 else 0
+                max_velocity = component.get_max_recommended_velocity()
+                warnings.append(f"High velocity in {component.name}: {velocity:.1f} m/s "
+                              f"(max recommended: {max_velocity:.1f} m/s)")
+        
+        # Check for excessive pressure drops
+        max_reasonable_dp = 5e6  # 5 MPa
+        for component_id, dp in solution_info['pressure_drops'].items():
+            if dp > max_reasonable_dp:
+                component = next(conn.component for conn in network.connections 
+                               if conn.component.id == component_id)
+                warnings.append(f"Excessive pressure drop in {component.name}: "
+                              f"{dp/1e6:.1f} MPa")
+        
+        # Check for very negative pressures
+        min_reasonable_pressure = -1e6  # -1 MPa
+        for node_id, pressure in solution_info['node_pressures'].items():
+            if pressure < min_reasonable_pressure:
+                node = network.nodes[node_id]
+                warnings.append(f"Very negative pressure at {node.name}: "
+                              f"{pressure/1e6:.1f} MPa")
+        
+        # Store warnings in solution info
+        solution_info['warnings'] = warnings
+    
     def print_results(self, network: FlowNetwork, connection_flows: Dict[str, float],
                      solution_info: Dict):
         """Print detailed results"""
@@ -698,6 +799,13 @@ class NetworkFlowSolver:
         for node_id, pressure in solution_info['node_pressures'].items():
             node = network.nodes[node_id]
             print(f"{node.name:<20} {pressure:<15.1f} {node.elevation:<12.1f}")
+        
+        # Print warnings if any
+        if 'warnings' in solution_info and solution_info['warnings']:
+            print(f"\n{'WARNINGS':<20}")
+            print("-" * 45)
+            for warning in solution_info['warnings']:
+                print(f"⚠️  {warning}")
 
 
 def create_simple_tree_example() -> Tuple[FlowNetwork, float, float]:
@@ -717,12 +825,13 @@ def create_simple_tree_example() -> Tuple[FlowNetwork, float, float]:
     network.add_outlet(outlet1)
     network.add_outlet(outlet2)
     
-    # Create components
+    # Create components with better nozzle sizing
     main_channel = Channel(diameter=0.08, length=10.0, name="Main Channel")
     branch1_channel = Channel(diameter=0.05, length=8.0, name="Branch1 Channel")
     branch2_channel = Channel(diameter=0.04, length=6.0, name="Branch2 Channel")
-    nozzle1 = Nozzle(diameter=0.012, nozzle_type=NozzleType.VENTURI, name="Nozzle1")
-    nozzle2 = Nozzle(diameter=0.008, nozzle_type=NozzleType.SHARP_EDGED, name="Nozzle2")
+    # Further increase nozzle sizes to reduce pressure drops and velocities
+    nozzle1 = Nozzle(diameter=0.025, nozzle_type=NozzleType.VENTURI, name="Nozzle1")
+    nozzle2 = Nozzle(diameter=0.020, nozzle_type=NozzleType.SHARP_EDGED, name="Nozzle2")
     
     # Connect components to form tree structure
     # Main line: Inlet -> Junction1
