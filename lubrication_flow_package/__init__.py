@@ -34,6 +34,12 @@ from .cli import (
     main
 )
 
+# Import utilities
+from .utils import (
+    find_all_paths, compute_path_pressure, estimate_resistance,
+    compute_node_pressures, validate_flow_conservation
+)
+
 __version__ = "1.0.0"
 __author__ = "Lubrication Flow Calculator Team"
 
@@ -52,5 +58,9 @@ __all__ = [
     'create_simple_tree_example',
     'demonstrate_hydraulic_approaches_comparison', 
     'demonstrate_proper_hydraulic_analysis',
-    'main'
+    'main',
+    
+    # Utilities
+    'find_all_paths', 'compute_path_pressure', 'estimate_resistance',
+    'compute_node_pressures', 'validate_flow_conservation'
 ]

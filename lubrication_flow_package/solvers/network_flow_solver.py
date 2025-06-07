@@ -12,6 +12,10 @@ from collections import deque
 from .config import SolverConfig
 from ..network.flow_network import FlowNetwork
 from ..network.connection import Connection
+from ..utils.network_utils import (
+    find_all_paths, estimate_resistance, calculate_path_conductances,
+    distribute_flow_by_conductance, check_convergence, compute_node_pressures
+)
 
 
 class NetworkFlowSolver:
@@ -88,8 +92,8 @@ class NetworkFlowSolver:
             'viscosity': viscosity
         }
 
-        # 2) Get paths
-        paths = network.get_paths_to_outlets()
+        # 2) Get paths using utility function
+        paths = find_all_paths(network)
         if not paths:
             raise ValueError("No valid paths from inlet to outlets")
 
@@ -125,11 +129,15 @@ class NetworkFlowSolver:
                 solution_info['iterations'] = iteration + 1
                 break
 
-            # 4b) Equal-split initial guess
+            # 4b) Equal-split initial guess (accumulate for shared connections)
             q0 = current_flow_rate / num_paths
+            # Reset flows first
+            for conn_id in connection_flows:
+                connection_flows[conn_id] = 0.0
+            # Add flow from each path to its connections
             for path in paths:
                 for conn in path:
-                    connection_flows[conn.component.id] = q0
+                    connection_flows[conn.component.id] += q0
 
             # 4c) Compute ΔP for each path
             path_dps = []
@@ -172,20 +180,20 @@ class NetworkFlowSolver:
                 connection_flows[path[-1].component.id]
                 for path in paths
             ]
-            #    ii) estimate R_i = dP/dQ
-            path_resistances = [
-                max(self._calculate_path_resistance(paths[i],
-                                                    fluid_properties,
-                                                    path_flows[i]), 1e-12)
-                for i in range(num_paths)
-            ]
-            #    iii) conductance and redistribute
-            G = [1.0 / R for R in path_resistances]
-            Gsum = sum(G)
+            #    ii) conductance and redistribute using utility functions
+            conductances = calculate_path_conductances(paths, fluid_properties, path_flows)
+            distributed_flows = distribute_flow_by_conductance(current_flow_rate, conductances)
+            
+            # Update connection flows (accumulate for shared connections)
+            # Reset flows first
+            for conn_id in connection_flows:
+                connection_flows[conn_id] = 0.0
+            
+            # Add flow from each path to its connections
             for i, path in enumerate(paths):
-                qi = current_flow_rate * G[i] / Gsum
+                qi = distributed_flows[i]
                 for conn in path:
-                    connection_flows[conn.component.id] = qi
+                    connection_flows[conn.component.id] += qi
 
         # 5) Finalize
         solution_info['actual_flow_rate'] = current_flow_rate
@@ -259,10 +267,8 @@ class NetworkFlowSolver:
             'viscosity': viscosity
         }
         
-        # Get all paths from inlet to outlets
-        paths = network.get_paths_to_outlets()
-        if not paths:
-            raise ValueError("No paths found from inlet to outlets")
+        # Get all paths from inlet to outlets using utility function
+        paths = find_all_paths(network)
         
         # Initialize solution info
         solution_info = {
@@ -277,75 +283,43 @@ class NetworkFlowSolver:
             'node_pressures': {}
         }
         
-        # Calculate path resistances
+        # Calculate initial path resistances using utility function
+        initial_flows = [total_flow_rate / len(paths)] * len(paths)
         path_resistances = []
-        for path in paths:
-            resistance = self._calculate_path_resistance(path, fluid_properties, total_flow_rate / len(paths))
+        for i, path in enumerate(paths):
+            resistance = estimate_resistance(path, initial_flows[i], fluid_properties)
             path_resistances.append(resistance)
         
-        # Calculate path conductances (1/resistance)
-        path_conductances = []
-        total_conductance = 0.0
-        for resistance in path_resistances:
-            if resistance > 0:
-                conductance = 1.0 / resistance
-            else:
-                conductance = 1e6  # Very high conductance for zero resistance
-            path_conductances.append(conductance)
-            total_conductance += conductance
+        # Calculate path conductances using utility function
+        path_conductances = calculate_path_conductances(paths, fluid_properties, initial_flows)
         
-        # Distribute flow based on conductance (correct hydraulic principle)
-        path_flows = []
-        for conductance in path_conductances:
-            if total_conductance > 0:
-                path_flow = total_flow_rate * conductance / total_conductance
-            else:
-                path_flow = total_flow_rate / len(paths)
-            path_flows.append(path_flow)
+        # Distribute flow based on conductance using utility function
+        path_flows = distribute_flow_by_conductance(total_flow_rate, path_conductances)
         
         # Initialize connection flows
         connection_flows = {}
         
         # Iterative refinement to account for flow-dependent resistance
         for iteration in range(max_iterations):
-            # Update path resistances based on current flows
+            # Update path resistances based on current flows using utility function
             new_path_resistances = []
             for i, path in enumerate(paths):
-                resistance = self._calculate_path_resistance(path, fluid_properties, path_flows[i])
+                resistance = estimate_resistance(path, path_flows[i], fluid_properties)
                 new_path_resistances.append(resistance)
             
-            # Check convergence of resistances and flows
-            resistance_changes = []
-            for i, (old_r, new_r) in enumerate(zip(path_resistances, new_path_resistances)):
-                if old_r > 0:
-                    change = abs(new_r - old_r) / old_r
-                    resistance_changes.append(change)
+            # Check convergence of resistances using utility function
+            resistance_converged, max_resistance_change = check_convergence(
+                path_resistances, new_path_resistances, tolerance)
             
-            max_resistance_change = max(resistance_changes) if resistance_changes else 0
+            # Calculate new flows based on updated resistances using utility functions
+            new_conductances = calculate_path_conductances(paths, fluid_properties, path_flows)
+            new_path_flows = distribute_flow_by_conductance(total_flow_rate, new_conductances)
             
-            # Check flow convergence
-            flow_changes = []
-            for i, path in enumerate(paths):
-                # Calculate new flow based on updated resistance
-                if new_path_resistances[i] > 0:
-                    new_conductance = 1.0 / new_path_resistances[i]
-                else:
-                    new_conductance = 1e6
-                
-                new_total_conductance = sum(1.0/r if r > 0 else 1e6 for r in new_path_resistances)
-                if new_total_conductance > 0:
-                    new_flow = total_flow_rate * new_conductance / new_total_conductance
-                else:
-                    new_flow = total_flow_rate / len(paths)
-                
-                if path_flows[i] > 0:
-                    flow_change = abs(new_flow - path_flows[i]) / path_flows[i]
-                    flow_changes.append(flow_change)
-            
-            max_flow_change = max(flow_changes) if flow_changes else 0
+            # Check flow convergence using utility function
+            flow_converged, max_flow_change = check_convergence(path_flows, new_path_flows, tolerance)
             
             # Check convergence
-            if max_resistance_change < tolerance and max_flow_change < tolerance:
+            if resistance_converged and flow_converged:
                 solution_info['converged'] = True
                 break
             
@@ -354,28 +328,8 @@ class NetworkFlowSolver:
                 solution_info['converged'] = True
                 break
             
-            # Update resistances and recalculate flows
+            # Update resistances for next iteration
             path_resistances = new_path_resistances
-            
-            # Recalculate conductances
-            path_conductances = []
-            total_conductance = 0.0
-            for resistance in path_resistances:
-                if resistance > 0:
-                    conductance = 1.0 / resistance
-                else:
-                    conductance = 1e6
-                path_conductances.append(conductance)
-                total_conductance += conductance
-            
-            # Redistribute flow based on updated conductances
-            new_path_flows = []
-            for conductance in path_conductances:
-                if total_conductance > 0:
-                    path_flow = total_flow_rate * conductance / total_conductance
-                else:
-                    path_flow = total_flow_rate / len(paths)
-                new_path_flows.append(path_flow)
             
             # Apply adaptive damping to prevent oscillations
             if iteration < 10:
@@ -399,9 +353,17 @@ class NetworkFlowSolver:
         # Set final connection flows based on path flows
         self._set_connection_flows_from_paths(network, paths, path_flows, connection_flows)
         
-        # Calculate final pressure drops and node pressures
-        self._calculate_final_results_correct(network, connection_flows, fluid_properties, 
-                                            solution_info, inlet_pressure)
+        # Calculate final pressure drops and node pressures using utility function
+        solution_info['pressure_drops'] = {}
+        for connection in network.connections:
+            component = connection.component
+            flow_rate = connection_flows[component.id]
+            dp = component.calculate_pressure_drop(flow_rate, fluid_properties)
+            solution_info['pressure_drops'][component.id] = dp
+        
+        # Calculate node pressures using utility function
+        node_pressures = compute_node_pressures(network, connection_flows, fluid_properties, inlet_pressure)
+        solution_info['node_pressures'] = node_pressures
         
         return connection_flows, solution_info
     
@@ -871,40 +833,9 @@ class NetworkFlowSolver:
         """Calculate final pressure drops and node pressures"""
         # Use the calculated required inlet pressure
         inlet_pressure = solution_info.get('required_inlet_pressure', 0.0)
-        node_pressures = {network.inlet_node.id: inlet_pressure}
         
-        # Calculate pressures using BFS from inlet
-        visited = set()
-        queue = deque([network.inlet_node.id])
-        
-        while queue:
-            current_node_id = queue.popleft()
-            if current_node_id in visited:
-                continue
-            visited.add(current_node_id)
-            
-            current_pressure = node_pressures[current_node_id]
-            current_node = network.nodes[current_node_id]
-            
-            # Process outgoing connections
-            for connection in network.adjacency_list[current_node_id]:
-                to_node = connection.to_node
-                component = connection.component
-                flow_rate = connection_flows[component.id]
-                
-                # Calculate pressure drop
-                dp_component = component.calculate_pressure_drop(flow_rate, fluid_properties)
-                dp_elevation = (self.oil_density * self.gravity * 
-                              (to_node.elevation - current_node.elevation))
-                
-                total_dp = dp_component + dp_elevation
-                
-                # Update downstream pressure
-                downstream_pressure = current_pressure - total_dp
-                
-                if to_node.id not in node_pressures:
-                    node_pressures[to_node.id] = downstream_pressure
-                    queue.append(to_node.id)
+        # Calculate node pressures using utility function
+        node_pressures = compute_node_pressures(network, connection_flows, fluid_properties, inlet_pressure)
         
         # Store results
         solution_info['node_pressures'] = node_pressures
