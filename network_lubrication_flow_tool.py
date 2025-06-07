@@ -16,11 +16,42 @@ Key features:
 
 import math
 import numpy as np
+from scipy.sparse import lil_matrix
+from scipy.sparse.linalg import spsolve
 from typing import List, Dict, Tuple, Optional, Set, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 from collections import defaultdict, deque
+
+@dataclass
+class SolverConfig:
+    # Solver control
+    max_iterations: int = 100
+    tolerance: float = 1e-6         # Relative ΔP convergence threshold
+
+    # Damping schedule for conductance rebalance (correct solver)
+    damping_initial: float = 0.3    # aggressive early
+    damping_mid: float = 0.5        # moderate
+    damping_final: float = 0.7      # conservative late
+
+    # Floors and cutoffs
+    min_resistance: float = 1e-12   # avoid infinite conductance
+    min_flow_fraction: float = 0.1  # 10% of pump flow to stop clipping
+
+    # Legacy solver-specific tolerances
+    legacy_min_tolerance_simple: float = 5e3      # Pa for ≤2 outlets 
+    legacy_min_tolerance_medium: float = 1e6      # Pa for 3–4 outlets
+    legacy_min_tolerance_complex: float = 2e6     # Pa for >4 outlets
+    legacy_damping_hardy_cross: float = 0.5       # relaxation factor
+
+    # Safety limits for warnings
+    max_reasonable_dp: float = 5e6                # 5 MPa
+    min_reasonable_pressure: float = -1e6         # –1 MPa
+
+    # Linearization thresholds
+    linear_flow_threshold: float = 1e-9
+    linear_delta_q_fraction: float = 0.01         # perturbation size
 
 
 class ComponentType(Enum):
@@ -141,20 +172,20 @@ class Channel(FlowComponent):
         return pressure_drop
     
     def _calculate_friction_factor(self, reynolds: float, relative_roughness: float) -> float:
-        """Calculate friction factor using appropriate correlations"""
+        """Calculate friction factor using Churchill's full-range explicit formula"""
         if reynolds <= 0:
-            return 0
-            
-        if reynolds < 2300:  # Laminar flow
-            return 64 / reynolds
-        elif reynolds < 4000:  # Transition region
-            f_lam = 64 / 2300
-            f_turb = self._turbulent_friction_factor(4000, relative_roughness)
-            # Smooth transition
-            x = (reynolds - 2300) / (4000 - 2300)
-            return f_lam * (1 - x)**3 + f_turb * x**3
-        else:  # Turbulent flow
-            return self._turbulent_friction_factor(reynolds, relative_roughness)
+            return 0.0
+
+        # Churchill's full-range formula (Churchill, 1977)
+        # A = [2.457 * ln(1/((7/Re)^0.9 + 0.27 * ε/D))]^16
+        # B = (37530 / Re)^16
+        # f = 8 * [ (8/Re)^12 + (A + B)^(-1.5) ]^(1/12)
+        A = (2.457 * math.log(1.0 / ((7.0 / reynolds) ** 0.9 + 0.27 * relative_roughness))) ** 16
+        B = (37530.0 / reynolds) ** 16
+        term = (8.0 / reynolds) ** 12 + (A + B) ** -1.5
+        friction_factor = 8.0 * term ** (1.0 / 12.0)
+
+        return friction_factor
     
     def _turbulent_friction_factor(self, reynolds: float, relative_roughness: float) -> float:
         """Calculate turbulent friction factor using Swamee-Jain approximation"""
@@ -231,13 +262,17 @@ class Connector(FlowComponent):
         
         # Add expansion/contraction losses for reducers
         if self.connector_type == ConnectorType.REDUCER and self.diameter != self.diameter_out:
-            area_ratio = (self.diameter_out / self.diameter) ** 2
-            if area_ratio < 1:  # Contraction
-                contraction_loss = 0.5 * (1 - area_ratio) * density * velocity ** 2 / 2
-                pressure_drop += contraction_loss
-            else:  # Expansion
-                expansion_loss = (1 - 1/area_ratio) ** 2 * density * velocity ** 2 / 2
-                pressure_drop += expansion_loss
+            β = self.diameter_out / self.diameter
+            area_ratio = β**2
+
+            if area_ratio < 1:  # sudden contraction
+                # loss coefficient Kc = (1 - β²)²
+                Kc = (1 - area_ratio)**2
+                pressure_drop += Kc * density * velocity**2 / 2
+            else:               # sudden expansion
+                # loss coefficient Ke = (1 - A1/A2)² = (1 - 1/area_ratio)²
+                Ke = (1 - 1/area_ratio)**2
+                pressure_drop += Ke * density * velocity**2 / 2
         
         return pressure_drop
 
@@ -475,7 +510,8 @@ class FlowNetwork:
 class NetworkFlowSolver:
     """Solver for flow distribution in networks"""
     
-    def __init__(self, oil_density: float = 900.0, oil_type: str = "SAE30"):
+    def __init__(self, config: SolverConfig = SolverConfig(), oil_density=900.0, oil_type="SAE30"):
+        self.cfg = config
         self.oil_density = oil_density
         self.oil_type = oil_type
         self.gravity = 9.81
@@ -504,51 +540,56 @@ class NetworkFlowSolver:
         viscosity = params["A"] * math.exp(params["B"] / (T - params["C"]))
         return max(1e-6, min(viscosity, 10.0))
     
-    def solve_network_flow_with_pump_physics(self, network: FlowNetwork, pump_flow_rate: float,
-                          temperature: float, pump_max_pressure: float = 1000000.0,
-                          outlet_pressure: float = 101325.0,
-                          max_iterations: int = 100, tolerance: float = 1e-6) -> Tuple[Dict[str, float], Dict]:
+    def solve_network_flow_with_pump_physics(self,
+                                            network: FlowNetwork,
+                                            pump_flow_rate: float,
+                                            temperature: float,
+                                            pump_max_pressure: float = 1e6,
+                                            outlet_pressure: float = 101325.0,
+                                            max_iterations: int = 100,
+                                            tolerance: float = 1e-6
+                                            ) -> Tuple[Dict[str, float], Dict]:
         """
         Solve flow distribution based on correct pump hydraulics
-        
+
         CORRECT HYDRAULIC APPROACH:
         - Pump provides flow rate (displacement)
         - System resistance creates pressure
         - If required pressure > pump limit, flow rate reduces
-        
+
         Args:
             network: FlowNetwork to solve
             pump_flow_rate: Flow rate from pump displacement (m³/s)
             temperature: Operating temperature (°C)
-            pump_max_pressure: Maximum pressure pump can sustain (Pa, default: 1000 kPa)
-            outlet_pressure: Pressure at system outlets (Pa, default: atmospheric)
+            pump_max_pressure: Maximum pressure pump can sustain (Pa)
+            outlet_pressure: Pressure at system outlets (Pa)
             max_iterations: Maximum solver iterations
-            tolerance: Convergence tolerance
-        
+            tolerance: Convergence tolerance on ΔP imbalance
+
         Returns:
             Tuple of (connection_flows, solution_info)
-            connection_flows: Dict mapping connection component IDs to flow rates
         """
-        # Validate network
+        # 0) Validate network topology
         is_valid, errors = network.validate_network()
         if not is_valid:
             raise ValueError(f"Invalid network: {errors}")
-        
-        # Get fluid properties
+
+        # 1) Fluid properties
         viscosity = self.calculate_viscosity(temperature)
         fluid_properties = {
             'density': self.oil_density,
             'viscosity': viscosity
         }
-        
-        # Get all paths from inlet to outlets
+
+        # 2) Get paths
         paths = network.get_paths_to_outlets()
         if not paths:
             raise ValueError("No valid paths from inlet to outlets")
-        
-        # CORRECT APPROACH: Start with pump flow rate, check if system can handle it
+
+        # 3) Initialize
         current_flow_rate = pump_flow_rate
-        
+        connection_flows = {c.component.id: 0.0 for c in network.connections}
+
         solution_info = {
             'converged': False,
             'iterations': 0,
@@ -564,104 +605,88 @@ class NetworkFlowSolver:
             'required_inlet_pressure': 0.0,
             'pump_adequate': True
         }
-        
-        # Initialize flow distribution
-        connection_flows = {conn.component.id: 0.0 for conn in network.connections}
-        
-        # Iterative solution to find flow distribution and required pressure
+
+        # 4) Iterative solve
         for iteration in range(max_iterations):
-            # Distribute current flow rate among paths (initially equal distribution)
-            flow_per_outlet = current_flow_rate / len(network.outlet_nodes)
-            
-            # Set flow rates for each connection based on path flows
-            for i, path in enumerate(paths):
-                path_flow = flow_per_outlet
-                for connection in path:
-                    connection_flows[connection.component.id] = path_flow
-            
-            # Calculate pressure drops for each path with current flow rates
-            path_pressure_drops = []
-            
-            for path in paths:
-                total_dp = 0.0
-                
-                for connection in path:
-                    component = connection.component
-                    flow_rate = connection_flows[component.id]
-                    
-                    # Component pressure drop
-                    dp_component = component.calculate_pressure_drop(flow_rate, fluid_properties)
-                    
-                    # Elevation pressure change
-                    elevation_change = connection.to_node.elevation - connection.from_node.elevation
-                    dp_elevation = self.oil_density * self.gravity * elevation_change
-                    
-                    total_dp += dp_component + dp_elevation
-                
-                path_pressure_drops.append(total_dp)
-            
-            # Required inlet pressure = outlet pressure + maximum pressure drop
-            # (all outlets should be at same pressure in balanced system)
-            max_pressure_drop = max(path_pressure_drops) if path_pressure_drops else 0.0
-            required_inlet_pressure = outlet_pressure + max_pressure_drop
-            
-            # Check if pump can provide this pressure
-            if required_inlet_pressure > pump_max_pressure:
-                # Pump cannot provide required pressure - reduce flow rate
-                pressure_ratio = pump_max_pressure / required_inlet_pressure
-                current_flow_rate *= pressure_ratio * 0.9  # Reduce by 90% of ratio for stability
-                solution_info['pump_adequate'] = False
-                
-                if current_flow_rate < pump_flow_rate * 0.1:  # Less than 10% of original
-                    break  # System cannot work with this pump
-            else:
-                # Pump can handle this pressure
-                solution_info['pump_adequate'] = True
+            num_paths = len(paths)
+
+            # 4a) Single-path shortcut
+            if num_paths == 1:
+                for conn in paths[0]:
+                    connection_flows[conn.component.id] = current_flow_rate
+                solution_info['converged'] = True
+                solution_info['iterations'] = iteration + 1
                 break
-            
-            solution_info['iterations'] = iteration + 1
-            
-            # For balanced system, adjust flow distribution to equalize pressure drops
-            if len(path_pressure_drops) > 1:
-                # Find pressure imbalance
-                min_dp = min(path_pressure_drops)
-                max_dp = max(path_pressure_drops)
-                pressure_imbalance = max_dp - min_dp
-                
-                if pressure_imbalance < tolerance * required_inlet_pressure:
-                    # System is balanced
-                    solution_info['converged'] = True
+
+            # 4b) Equal-split initial guess
+            q0 = current_flow_rate / num_paths
+            for path in paths:
+                for conn in path:
+                    connection_flows[conn.component.id] = q0
+
+            # 4c) Compute ΔP for each path
+            path_dps = []
+            for path in paths:
+                dp_sum = 0.0
+                for conn in path:
+                    q = connection_flows[conn.component.id]
+                    dp_sum += conn.component.calculate_pressure_drop(q, fluid_properties)
+                    dp_sum += self.oil_density * self.gravity * (
+                        conn.to_node.elevation - conn.from_node.elevation
+                    )
+                path_dps.append(dp_sum)
+
+            # 4d) Pump clipping
+            max_dp = max(path_dps)
+            required_p0 = outlet_pressure + max_dp
+            solution_info['required_inlet_pressure'] = required_p0
+
+            if required_p0 > pump_max_pressure:
+                ratio = pump_max_pressure / required_p0
+                current_flow_rate *= ratio * 0.9
+                solution_info['pump_adequate'] = False
+                if current_flow_rate < pump_flow_rate * 0.1:
+                    solution_info['iterations'] = iteration + 1
                     break
-                
-                # Adjust flow distribution to balance pressures
-                # Paths with higher pressure drops should get less flow
-                total_resistance = sum(1.0/dp if dp > 0 else 1e6 for dp in path_pressure_drops)
-                
-                for i, path in enumerate(paths):
-                    if path_pressure_drops[i] > 0:
-                        # Flow inversely proportional to resistance
-                        path_flow = current_flow_rate * (1.0/path_pressure_drops[i]) / total_resistance
-                    else:
-                        path_flow = current_flow_rate / len(paths)
-                    
-                    for connection in path:
-                        connection_flows[connection.component.id] = path_flow
             else:
-                # Single path - already converged
+                solution_info['pump_adequate'] = True
+
+            solution_info['iterations'] = iteration + 1
+
+            # 4e) Check convergence on ΔP imbalance
+            dp_diff = max_dp - min(path_dps)
+            if dp_diff < tolerance * required_p0:
                 solution_info['converged'] = True
                 break
-        
-        # Store final results
+
+            # 4f) Conductance-based rebalance
+            #    i) current per-path flows
+            path_flows = [
+                connection_flows[path[-1].component.id]
+                for path in paths
+            ]
+            #    ii) estimate R_i = dP/dQ
+            path_resistances = [
+                max(self._calculate_path_resistance(paths[i],
+                                                    fluid_properties,
+                                                    path_flows[i]), 1e-12)
+                for i in range(num_paths)
+            ]
+            #    iii) conductance and redistribute
+            G = [1.0 / R for R in path_resistances]
+            Gsum = sum(G)
+            for i, path in enumerate(paths):
+                qi = current_flow_rate * G[i] / Gsum
+                for conn in path:
+                    connection_flows[conn.component.id] = qi
+
+        # 5) Finalize
         solution_info['actual_flow_rate'] = current_flow_rate
-        solution_info['required_inlet_pressure'] = required_inlet_pressure
-        
-        # Calculate final pressure drops and node pressures
         self._calculate_final_results(network, connection_flows, fluid_properties, solution_info)
-        
-        # Validate results
-        self._validate_solution(network, connection_flows, solution_info)
-        
+        self._validate_solution   (network, connection_flows,             solution_info)
+
         return connection_flows, solution_info
+
     
     def solve_network_flow(self, network: FlowNetwork, total_flow_rate: float,
                           temperature: float, inlet_pressure: float = 200000.0,
@@ -878,6 +903,104 @@ class NetworkFlowSolver:
         
         return connection_flows, solution_info
     
+    def solve_network_flow_nodal(self,
+                                network: FlowNetwork,
+                                total_flow_rate: float,
+                                temperature: float,
+                                inlet_pressure: float = 200000.0,
+                                outlet_pressure: float = 101325.0) -> Tuple[Dict[str, float], Dict]:
+        """
+        Solve network flow using nodal (matrix-based) analysis for scalability.
+
+        - Uses conductance matrix to solve for nodal pressures in one linear solve.
+        - Known pressures: inlet and outlet nodes; unknown: all other nodes.
+        - Once pressures are found, flows on each connection = conductance * (P_from - P_to).
+        """
+        # 1) Validate network
+        valid, errors = network.validate_network()
+        if not valid:
+            raise ValueError(f"Invalid network: {errors}")
+
+        # 2) Fluid properties and nominal viscosity
+        viscosity = self.calculate_viscosity(temperature)
+        props = {'density': self.oil_density, 'viscosity': viscosity}
+
+        # 3) Assemble node indices
+        all_nodes = list(network.nodes.values())
+        # Identify known-pressure nodes
+        known_nodes = {network.inlet_node.id: inlet_pressure}
+        for out in network.outlet_nodes:
+            known_nodes[out.id] = outlet_pressure
+        # Unknown nodes
+        unknown_nodes = [n for n in all_nodes if n.id not in known_nodes]
+        N = len(unknown_nodes)
+
+        # Map node ID to index
+        idx_map = {n.id: i for i, n in enumerate(unknown_nodes)}
+
+        # 4) Compute conductances for each connection
+        G_e = {}
+        for conn in network.connections:
+            # Estimate resistance at equal split flow
+            Q0 = total_flow_rate / max(1, len(network.outlet_nodes))
+            R = self._calculate_path_resistance([conn], props, Q0)
+            G_e[conn.component.id] = 1.0 / R if R > 0 else 1e12
+
+        # 5) Build sparse conductance matrix and RHS
+        Gmat = lil_matrix((N, N))
+        b = [0.0] * N
+
+        for conn in network.connections:
+            i_id, j_id = conn.from_node.id, conn.to_node.id
+            g = G_e[conn.component.id]
+            # if both unknown
+            if i_id in idx_map and j_id in idx_map:
+                i, j = idx_map[i_id], idx_map[j_id]
+                Gmat[i, i] += g
+                Gmat[j, j] += g
+                Gmat[i, j] -= g
+                Gmat[j, i] -= g
+            # if one end known
+            elif i_id in idx_map:
+                i = idx_map[i_id]
+                Gmat[i, i] += g
+                b[i] += g * known_nodes[j_id]
+            elif j_id in idx_map:
+                j = idx_map[j_id]
+                Gmat[j, j] += g
+                b[j] += g * known_nodes[i_id]
+            # if both known: no equation required
+
+        # 6) Solve linear system
+        P_unknown = spsolve(Gmat.tocsr(), b)
+
+        # 7) Collect nodal pressures
+        node_pressures = {nid: p for nid, p in known_nodes.items()}
+        for n, p in zip(unknown_nodes, P_unknown):
+            node_pressures[n.id] = p
+
+        # 8) Compute flows on each connection
+        conn_flows = {}
+        for conn in network.connections:
+            p_from = node_pressures[conn.from_node.id]
+            p_to = node_pressures[conn.to_node.id]
+            conn_flows[conn.component.id] = G_e[conn.component.id] * (p_from - p_to)
+
+        # 9) Assemble solution info
+        solution_info = {
+            'converged': True,
+            'iterations': 1,
+            'viscosity': viscosity,
+            'temperature': temperature,
+            'inlet_pressure': inlet_pressure,
+            'outlet_pressure': outlet_pressure,
+            'node_pressures': node_pressures,
+            'pressure_drops': {cid: abs(conn_flows[cid]) / G_e[cid] for cid in conn_flows}
+        }
+
+        return conn_flows, solution_info
+
+
     def _calculate_path_resistance(self, path: List[Connection], fluid_properties: Dict, 
                                  estimated_flow: float) -> float:
         """Calculate total resistance of a path"""
@@ -1786,4 +1909,33 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Existing setup from main()
+    solver = NetworkFlowSolver(oil_density=900.0, oil_type="SAE30")
+    network, total_flow_rate, temperature = create_simple_tree_example()
+
+    print("\n" + "="*70)
+    print("APPROACH 3: MATRIX-BASED NODAL SOLVER (SCALABLE)")
+    print("="*70)
+    print("✓ Single linear solve for nodal pressures")
+    print("✓ Direct flow via conductance" )
+
+    # Solve using new nodal method
+    conn_flows_nodal, sol_info_nodal = solver.solve_network_flow_nodal(
+        network,
+        total_flow_rate,
+        temperature,
+        inlet_pressure=200000.0,
+        outlet_pressure=101325.0
+    )
+
+    # Print results
+    solver.print_results(network, conn_flows_nodal, sol_info_nodal)
+
+    # Optional: path-level comparison summary
+    paths = network.get_paths_to_outlets()
+    print(f"\nPATH PRESSURE DROPS (NODAL):")
+    for i, path in enumerate(paths, 1):
+        total_dp = sum(sol_info_nodal['pressure_drops'][c.component.id] for c in path)
+        print(f"  Path {i}: Total ΔP = {total_dp/1000:.1f} kPa")
+    
+    #main()
