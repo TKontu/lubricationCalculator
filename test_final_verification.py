@@ -120,7 +120,10 @@ def test_solvers_subpackage():
         
         for method_name in methods:
             method = getattr(solver, method_name)
-            flows, info = method(network, 0.001, 40.0)
+            if method_name == 'solve_network_flow_with_pump_physics':
+                flows, info = method(network, 0.001, 40.0, 200000.0)
+            else:
+                flows, info = method(network, 0.001, 40.0, 200000.0)
             print(f"   ✓ {method_name}: converged={info.get('converged', 'N/A')}")
         
         return True
