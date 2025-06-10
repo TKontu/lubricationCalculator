@@ -54,31 +54,10 @@ class FlowNetwork:
             self.outlet_nodes.append(node)
     
     def get_paths_to_outlets(self) -> List[List[Connection]]:
-        """Get all paths from inlet to outlets"""
-        if not self.inlet_node:
-            raise ValueError("No inlet node defined")
-        
-        paths = []
-        
-        def dfs_paths(current_node_id: str, current_path: List[Connection], 
-                     visited: Set[str]):
-            if current_node_id in visited:
-                return  # Avoid cycles
-            
-            visited.add(current_node_id)
-            
-            # Check if this is an outlet node
-            current_node = self.nodes[current_node_id]
-            if current_node in self.outlet_nodes:
-                paths.append(current_path.copy())
-            
-            # Continue to connected nodes
-            for connection in self.adjacency_list[current_node_id]:
-                new_path = current_path + [connection]
-                dfs_paths(connection.to_node.id, new_path, visited.copy())
-        
-        dfs_paths(self.inlet_node.id, [], set())
-        return paths
+        """Get all paths from inlet to outlets using the unified DFS implementation"""
+        # Import here to avoid circular imports
+        from ..utils.network_utils import find_all_paths
+        return find_all_paths(self, raise_on_no_paths=False)
     
     def validate_network(self) -> Tuple[bool, List[str]]:
         """Validate the network topology"""

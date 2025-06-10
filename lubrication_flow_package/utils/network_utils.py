@@ -16,18 +16,22 @@ if TYPE_CHECKING:
     from ..network.flow_network import FlowNetwork
 
 
-def find_all_paths(network: 'FlowNetwork') -> List[List['Connection']]:
+def find_all_paths(network: 'FlowNetwork', raise_on_no_paths: bool = True) -> List[List['Connection']]:
     """
-    Find all paths from inlet to outlets in the network.
+    Find all paths from inlet to outlets in the network using depth-first search.
+    
+    This is the unified DFS implementation used by both standalone function calls
+    and FlowNetwork.get_paths_to_outlets() method.
     
     Args:
         network: The flow network to analyze
+        raise_on_no_paths: Whether to raise an exception if no paths are found
         
     Returns:
         List of paths, where each path is a list of connections
         
     Raises:
-        ValueError: If no inlet node is defined or no paths found
+        ValueError: If no inlet node is defined or (optionally) no paths found
     """
     if not network.inlet_node:
         raise ValueError("No inlet node defined")
@@ -54,7 +58,7 @@ def find_all_paths(network: 'FlowNetwork') -> List[List['Connection']]:
     
     dfs_paths(network.inlet_node.id, [], set())
     
-    if not paths:
+    if raise_on_no_paths and not paths:
         raise ValueError("No paths found from inlet to outlets")
     
     return paths

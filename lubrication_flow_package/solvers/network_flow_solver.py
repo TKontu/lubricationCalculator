@@ -12,7 +12,7 @@ from .config import SolverConfig
 from ..network.flow_network import FlowNetwork
 from ..network.connection import Connection
 from ..utils.network_utils import (
-    find_all_paths, compute_path_pressure, estimate_resistance,
+    compute_path_pressure, estimate_resistance,
     compute_node_pressures, validate_flow_conservation,
     calculate_path_conductances, distribute_flow_by_conductance,
     check_convergence
