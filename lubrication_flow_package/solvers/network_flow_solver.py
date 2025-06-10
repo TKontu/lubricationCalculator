@@ -3,7 +3,7 @@ ANetworkFlowSolver - Main solver for flow distribution in networks
 """
 
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from collections import deque
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import spsolve
@@ -11,6 +11,7 @@ from scipy.sparse.linalg import spsolve
 from .config import SolverConfig
 from ..network.flow_network import FlowNetwork
 from ..network.connection import Connection
+from ..components.pump import PumpCharacteristic
 from ..utils.network_utils import (
     compute_path_pressure, estimate_resistance,
     compute_node_pressures, validate_flow_conservation,
@@ -55,24 +56,27 @@ class NetworkFlowSolver:
                                             network: FlowNetwork,
                                             pump_flow_rate: float,
                                             temperature: float,
+                                            pump_characteristic: Optional[PumpCharacteristic] = None,
                                             pump_max_pressure: float = 1e6,
                                             outlet_pressure: float = 101325.0,
                                             max_iterations: int = 100,
                                             tolerance: float = 1e-6
                                             ) -> Tuple[Dict[str, float], Dict]:
         """
-        Solve flow distribution based on correct pump hydraulics
+        Solve flow distribution based on correct pump hydraulics with P-Q curves
 
         CORRECT HYDRAULIC APPROACH:
-        - Pump provides flow rate (displacement)
-        - System resistance creates pressure
-        - If required pressure > pump limit, flow rate reduces
+        - Pump characteristic curve P(Q) defines available pressure vs flow
+        - System resistance creates back-pressure
+        - Operating point is intersection of pump curve and system curve
+        - If no pump characteristic provided, falls back to simple pressure limiting
 
         Args:
             network: FlowNetwork to solve
-            pump_flow_rate: Flow rate from pump displacement (m³/s)
+            pump_flow_rate: Initial flow rate estimate or pump displacement (m³/s)
             temperature: Operating temperature (°C)
-            pump_max_pressure: Maximum pressure pump can sustain (Pa)
+            pump_characteristic: Pump P-Q characteristic curve (optional)
+            pump_max_pressure: Maximum pressure pump can sustain (Pa) - used if no characteristic
             outlet_pressure: Pressure at system outlets (Pa)
             max_iterations: Maximum solver iterations
             tolerance: Convergence tolerance on ΔP imbalance
@@ -147,20 +151,64 @@ class NetworkFlowSolver:
                     )
                 path_dps.append(dp_sum)
 
-            # 4d) Pump clipping
+            # 4d) Pump characteristic evaluation
             max_dp = max(path_dps)
             required_p0 = outlet_pressure + max_dp
             solution_info['required_inlet_pressure'] = required_p0
 
-            if required_p0 > pump_max_pressure:
-                ratio = pump_max_pressure / required_p0
-                current_flow_rate *= ratio * 0.9
-                solution_info['pump_adequate'] = False
+            # Use pump characteristic curve if provided, otherwise fall back to simple clipping
+            if pump_characteristic is not None:
+                # Get available pressure from pump at current flow rate
+                available_pressure = pump_characteristic.get_pressure(current_flow_rate)
+                
+                if available_pressure < required_p0:
+                    # Pump cannot provide required pressure at this flow rate
+                    # Find the operating point using pump curve intersection
+                    system_resistance = self._estimate_system_resistance(paths, fluid_properties, current_flow_rate)
+                    
+                    try:
+                        # Find intersection of pump curve and system curve
+                        operating_flow, operating_pressure = pump_characteristic.find_operating_point(
+                            system_resistance, 
+                            flow_range=(0.0, current_flow_rate * 1.5),
+                            tolerance=tolerance * required_p0
+                        )
+                        
+                        # Update flow rate to operating point
+                        if operating_flow > 0 and operating_flow < current_flow_rate:
+                            current_flow_rate = operating_flow
+                            solution_info['pump_adequate'] = False
+                            solution_info['operating_pressure'] = operating_pressure
+                        else:
+                            solution_info['pump_adequate'] = True
+                            
+                    except Exception:
+                        # Fallback to simple pressure-based reduction if curve intersection fails
+                        ratio = available_pressure / required_p0
+                        current_flow_rate *= ratio * 0.9
+                        solution_info['pump_adequate'] = False
+                else:
+                    solution_info['pump_adequate'] = True
+                    solution_info['operating_pressure'] = available_pressure
+                    
+                solution_info['available_pressure'] = available_pressure
+                
+                # Stop if flow rate becomes too low
                 if current_flow_rate < pump_flow_rate * 0.1:
                     solution_info['iterations'] = iteration + 1
                     break
+                    
             else:
-                solution_info['pump_adequate'] = True
+                # Legacy simple pressure clipping
+                if required_p0 > pump_max_pressure:
+                    ratio = pump_max_pressure / required_p0
+                    current_flow_rate *= ratio * 0.9
+                    solution_info['pump_adequate'] = False
+                    if current_flow_rate < pump_flow_rate * 0.1:
+                        solution_info['iterations'] = iteration + 1
+                        break
+                else:
+                    solution_info['pump_adequate'] = True
 
             solution_info['iterations'] = iteration + 1
 
@@ -538,6 +586,55 @@ class NetworkFlowSolver:
             total_resistance += max(resistance, 0)  # Ensure non-negative
         
         return total_resistance
+    
+    def _estimate_system_resistance(self, paths: List[List[Connection]], 
+                                   fluid_properties: Dict, current_flow: float) -> float:
+        """
+        Estimate overall system resistance coefficient for pump curve intersection
+        
+        For hydraulic systems, the system curve is typically P = R * Q^2
+        This method estimates the resistance coefficient R
+        
+        Args:
+            paths: List of flow paths in the network
+            fluid_properties: Fluid properties dictionary
+            current_flow: Current total flow rate
+            
+        Returns:
+            System resistance coefficient (Pa·s²/m⁶)
+        """
+        if current_flow <= 1e-9:
+            current_flow = 1e-6  # Use small non-zero value for estimation
+        
+        # Calculate total pressure drop at current flow
+        total_dp = 0.0
+        num_paths = len(paths)
+        
+        if num_paths == 1:
+            # Single path - use its resistance directly
+            path_resistance = self._calculate_path_resistance(paths[0], fluid_properties, current_flow)
+            total_dp = path_resistance * current_flow
+        else:
+            # Multiple paths - estimate based on parallel resistance
+            path_resistances = []
+            for path in paths:
+                path_flow = current_flow / num_paths  # Approximate equal distribution
+                resistance = self._calculate_path_resistance(path, fluid_properties, path_flow)
+                path_resistances.append(resistance)
+            
+            # For parallel paths, total resistance is 1/sum(1/Ri)
+            if path_resistances:
+                total_conductance = sum(1.0 / max(r, 1e-12) for r in path_resistances)
+                total_resistance = 1.0 / max(total_conductance, 1e-12)
+                total_dp = total_resistance * current_flow
+        
+        # Estimate system resistance coefficient: R = ΔP / Q^2
+        if current_flow > 1e-9:
+            system_resistance = total_dp / (current_flow ** 2)
+        else:
+            system_resistance = 1e6  # Default high resistance
+        
+        return max(system_resistance, 1e-6)  # Ensure positive resistance
     
     def _set_connection_flows_from_paths(self, network: FlowNetwork, paths: List[List[Connection]], 
                                        path_flows: List[float], connection_flows: Dict[str, float]):
