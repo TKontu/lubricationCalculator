@@ -1,5 +1,5 @@
 """
-NetworkFlowSolver - Main solver for flow distribution in networks
+ANetworkFlowSolver - Main solver for flow distribution in networks
 """
 
 import math
