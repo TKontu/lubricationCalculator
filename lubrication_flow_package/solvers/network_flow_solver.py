@@ -522,8 +522,8 @@ class NetworkFlowSolver:
             
             # Calculate component resistance (dP/dQ)
             if estimated_flow > 1e-9:
-                # Use small flow perturbation to estimate resistance
-                delta_q = estimated_flow * 0.01
+                # Use absolute flow perturbation to estimate resistance
+                delta_q = self.cfg.dq_absolute
                 dp1 = component.calculate_pressure_drop(estimated_flow, fluid_properties)
                 dp2 = component.calculate_pressure_drop(estimated_flow + delta_q, fluid_properties)
                 
@@ -533,7 +533,7 @@ class NetworkFlowSolver:
                     resistance = dp1 / estimated_flow if estimated_flow > 0 else 0
             else:
                 # For very small flows, use linear approximation
-                resistance = component.calculate_pressure_drop(1e-6, fluid_properties) / 1e-6
+                resistance = component.calculate_pressure_drop(self.cfg.dq_absolute, fluid_properties) / self.cfg.dq_absolute
             
             total_resistance += max(resistance, 0)  # Ensure non-negative
         
@@ -757,8 +757,8 @@ class NetworkFlowSolver:
                             # Non-shared component - use path flow
                             comp_flow = current_flow
                         
-                        # Approximate derivative using small flow change
-                        delta_q = max(comp_flow * 0.01, 1e-6)
+                        # Approximate derivative using absolute flow change
+                        delta_q = self.cfg.dq_absolute
                         
                         dp1 = component.calculate_pressure_drop(comp_flow, fluid_properties)
                         dp2 = component.calculate_pressure_drop(comp_flow + delta_q, fluid_properties)

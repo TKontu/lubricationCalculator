@@ -11,6 +11,9 @@ class SolverConfig:
     max_iterations: int = 100
     tolerance: float = 1e-6         # Relative ΔP convergence threshold
 
+    # Numerical derivative parameters
+    dq_absolute: float = 1e-6       # Absolute step size for resistance calculation (m³/s)
+
     # Damping schedule for conductance rebalance (correct solver)
     damping_initial: float = 0.3    # aggressive early
     damping_mid: float = 0.5        # moderate
