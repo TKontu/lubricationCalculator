@@ -15,7 +15,7 @@ from ..utils.network_utils import (
     find_all_paths, compute_path_pressure, estimate_resistance,
     compute_node_pressures, validate_flow_conservation,
     calculate_path_conductances, distribute_flow_by_conductance,
-    check_convergence, apply_damping, get_adaptive_damping
+    check_convergence
 )
 
 class NetworkFlowSolver:
@@ -388,11 +388,11 @@ class NetworkFlowSolver:
             
             # Apply adaptive damping to prevent oscillations
             if iteration < 10:
-                damping = 0.3  # More aggressive initially
+                damping = self.cfg.damping_initial  # More aggressive initially
             elif iteration < 50:
-                damping = 0.5  # Moderate damping
+                damping = self.cfg.damping_mid  # Moderate damping
             else:
-                damping = 0.7  # Conservative damping for stability
+                damping = self.cfg.damping_final  # Conservative damping for stability
                 
             for i in range(len(path_flows)):
                 path_flows[i] = path_flows[i] * (1 - damping) + new_path_flows[i] * damping
