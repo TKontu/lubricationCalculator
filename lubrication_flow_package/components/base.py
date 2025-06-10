@@ -16,11 +16,44 @@ class ComponentType(Enum):
 
 class ConnectorType(Enum):
     """Types of connectors"""
+    # Basic connectors
     T_JUNCTION = "t_junction"
     X_JUNCTION = "x_junction"
-    ELBOW_90 = "elbow_90"
-    REDUCER = "reducer"
     STRAIGHT = "straight"
+    
+    # Elbows
+    ELBOW_90 = "elbow_90"
+    ELBOW_45 = "elbow_45"
+    ELBOW_30 = "elbow_30"
+    ELBOW_SMOOTH = "elbow_smooth"
+    ELBOW_MITERED = "elbow_mitered"
+    
+    # Reducers and expanders
+    REDUCER_GRADUAL = "reducer_gradual"
+    REDUCER_SUDDEN = "reducer_sudden"
+    EXPANDER_GRADUAL = "expander_gradual"
+    EXPANDER_SUDDEN = "expander_sudden"
+    
+    # Valves
+    GATE_VALVE = "gate_valve"
+    BALL_VALVE = "ball_valve"
+    GLOBE_VALVE = "globe_valve"
+    CHECK_VALVE = "check_valve"
+    BUTTERFLY_VALVE = "butterfly_valve"
+    
+    # Fittings
+    UNION = "union"
+    COUPLING = "coupling"
+    ADAPTER = "adapter"
+    
+    # Complex junctions
+    WYE_JUNCTION = "wye_junction"
+    LATERAL_TEE = "lateral_tee"
+    
+    # Bends
+    RETURN_BEND = "return_bend"
+    LONG_RADIUS_ELBOW = "long_radius_elbow"
+    SHORT_RADIUS_ELBOW = "short_radius_elbow"
 
 
 class NozzleType(Enum):
