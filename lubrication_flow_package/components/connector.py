@@ -69,12 +69,16 @@ class LossCoefficientCalculator:
             if taper_angle_deg <= 45:  # Gradual contraction
                 K = 0.8 * (1 - area_ratio) * math.sin(math.radians(taper_angle_deg / 2))
             else:  # Sudden contraction
-                K = 0.5 * (1 - β ** 4)
+                K = 0.5 * (1 - area_ratio)
         else:  # Expansion
-            if taper_angle_deg <= 45:  # Gradual expansion
-                K = 2.6 * math.sin(math.radians(taper_angle_deg / 2)) * (1 - area_ratio) ** 2
-            else:  # Sudden expansion
-                K = (1 - area_ratio) ** 2
+            # A₁/A₂ = 1/area_ratio
+            ar_inv = 1.0 / area_ratio
+            
+            if taper_angle_deg <= 45:  # gradual expansion
+                # empirical Crane‐handbook style
+                K = 2.6 * math.sin(math.radians(taper_angle_deg / 2)) * (1 - ar_inv) ** 2
+            else:  # sudden expansion
+                K = (1 - ar_inv) ** 2
         
         # Reynolds number correction for laminar flow
         if reynolds_number < 2300:
