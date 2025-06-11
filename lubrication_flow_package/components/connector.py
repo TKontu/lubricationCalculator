@@ -69,7 +69,7 @@ class LossCoefficientCalculator:
             if taper_angle_deg <= 45:  # Gradual contraction
                 K = 0.8 * (1 - area_ratio) * math.sin(math.radians(taper_angle_deg / 2))
             else:  # Sudden contraction
-                K = 0.5 * (1 - area_ratio)
+                K = 0.5 * (1 - β ** 4)
         else:  # Expansion
             if taper_angle_deg <= 45:  # Gradual expansion
                 K = 2.6 * math.sin(math.radians(taper_angle_deg / 2)) * (1 - area_ratio) ** 2
