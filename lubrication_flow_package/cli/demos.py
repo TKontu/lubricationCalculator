@@ -342,8 +342,10 @@ if __name__ == "__main__":
     print("✓ Single linear solve for nodal pressures")
     print("✓ Direct flow via conductance" )
 
-    # Solve using new nodal method
-    conn_flows_nodal, sol_info_nodal = solver.solve_network_flow_nodal(
+    # Solve using unified nodal method
+    from ..solvers.nodal_matrix_solver import NodalMatrixSolver
+    nodal_solver = NodalMatrixSolver(oil_density=solver.oil_density, oil_type=solver.oil_type)
+    conn_flows_nodal, sol_info_nodal = nodal_solver.solve_nodal_network(
         network,
         total_flow_rate,
         temperature,

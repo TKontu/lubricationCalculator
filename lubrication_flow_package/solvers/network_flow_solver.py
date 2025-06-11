@@ -421,95 +421,40 @@ class NetworkFlowSolver:
                                 inlet_pressure: float = 200000.0,
                                 outlet_pressure: float = 101325.0) -> Tuple[Dict[str, float], Dict]:
         """
-        Solve network flow using nodal (matrix-based) analysis for scalability.
-
-        - Uses conductance matrix to solve for nodal pressures in one linear solve.
-        - Known pressures: inlet and outlet nodes; unknown: all other nodes.
-        - Once pressures are found, flows on each connection = conductance * (P_from - P_to).
+        DEPRECATED: Use NodalMatrixSolver.solve_nodal_network() instead.
+        
+        This method is maintained for backward compatibility but will be removed in a future version.
+        Please migrate to using the unified nodal solver:
+        
+        from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+        solver = NodalMatrixSolver(oil_density=self.oil_density, oil_type=self.oil_type)
+        return solver.solve_nodal_network(network, total_flow_rate, temperature, 
+                                         inlet_pressure, outlet_pressure)
         """
-        # 1) Validate network
-        valid, errors = network.validate_network()
-        if not valid:
-            raise ValueError(f"Invalid network: {errors}")
-
-        # 2) Fluid properties and nominal viscosity
-        viscosity = self.calculate_viscosity(temperature)
-        props = {'density': self.oil_density, 'viscosity': viscosity}
-
-        # 3) Assemble node indices
-        all_nodes = list(network.nodes.values())
-        # Identify known-pressure nodes
-        known_nodes = {network.inlet_node.id: inlet_pressure}
-        for out in network.outlet_nodes:
-            known_nodes[out.id] = outlet_pressure
-        # Unknown nodes
-        unknown_nodes = [n for n in all_nodes if n.id not in known_nodes]
-        N = len(unknown_nodes)
-
-        # Map node ID to index
-        idx_map = {n.id: i for i, n in enumerate(unknown_nodes)}
-
-        # 4) Compute conductances for each connection
-        G_e = {}
-        for conn in network.connections:
-            # Estimate resistance at equal split flow
-            Q0 = total_flow_rate / max(1, len(network.outlet_nodes))
-            R = self._calculate_path_resistance([conn], props, Q0)
-            G_e[conn.component.id] = 1.0 / R if R > 0 else 1e12
-
-        # 5) Build sparse conductance matrix and RHS
-        Gmat = lil_matrix((N, N))
-        b = [0.0] * N
-
-        for conn in network.connections:
-            i_id, j_id = conn.from_node.id, conn.to_node.id
-            g = G_e[conn.component.id]
-            # if both unknown
-            if i_id in idx_map and j_id in idx_map:
-                i, j = idx_map[i_id], idx_map[j_id]
-                Gmat[i, i] += g
-                Gmat[j, j] += g
-                Gmat[i, j] -= g
-                Gmat[j, i] -= g
-            # if one end known
-            elif i_id in idx_map:
-                i = idx_map[i_id]
-                Gmat[i, i] += g
-                b[i] += g * known_nodes[j_id]
-            elif j_id in idx_map:
-                j = idx_map[j_id]
-                Gmat[j, j] += g
-                b[j] += g * known_nodes[i_id]
-            # if both known: no equation required
-
-        # 6) Solve linear system
-        P_unknown = spsolve(Gmat.tocsr(), b)
-
-        # 7) Collect nodal pressures
-        node_pressures = {nid: p for nid, p in known_nodes.items()}
-        for n, p in zip(unknown_nodes, P_unknown):
-            node_pressures[n.id] = p
-
-        # 8) Compute flows on each connection
-        conn_flows = {}
-        for conn in network.connections:
-            p_from = node_pressures[conn.from_node.id]
-            p_to = node_pressures[conn.to_node.id]
-            conn_flows[conn.component.id] = G_e[conn.component.id] * (p_from - p_to)
-
-        # 9) Assemble solution info
-        solution_info = {
-            'converged': True,
-            'iterations': 1,
-            'viscosity': viscosity,
-            'temperature': temperature,
-            'inlet_pressure': inlet_pressure,
-            'outlet_pressure': outlet_pressure,
-            'node_pressures': node_pressures,
-            'pressure_drops': {cid: abs(conn_flows[cid]) / G_e[cid] for cid in conn_flows}
-        }
-
-        return conn_flows, solution_info
+        import warnings
+        warnings.warn(
+            "solve_network_flow_nodal is deprecated. Use NodalMatrixSolver.solve_nodal_network() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        # Import and delegate to the unified solver
+        from .nodal_matrix_solver import NodalMatrixSolver
+        
+        # Create solver with same configuration
+        solver = NodalMatrixSolver(
+            oil_density=self.oil_density,
+            oil_type=self.oil_type,
+            config=self.cfg
+        )
+        
+        return solver.solve_nodal_network(
+            network=network,
+            total_flow_rate=total_flow_rate,
+            temperature=temperature,
+            inlet_pressure=inlet_pressure,
+            outlet_pressure=outlet_pressure
+        )
 
 
     def _calculate_path_resistance(self, path: List[Connection], fluid_properties: Dict, 
