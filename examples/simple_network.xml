@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='utf-8'?>
+<network name="Simple XML Network" description="A simple network defined in XML format">
+  <nodes>
+    <node id="inlet" name="Inlet" elevation="0.0" type="inlet" x="0.0" y="0.0" />
+    <node id="junction" name="Junction" elevation="1.0" type="junction" x="10.0" y="0.0" />
+    <node id="outlet1" name="Outlet 1" elevation="2.0" type="outlet" x="20.0" y="5.0" />
+    <node id="outlet2" name="Outlet 2" elevation="1.5" type="outlet" x="20.0" y="-5.0" />
+  </nodes>
+  <components>
+    <component id="main_pipe" name="Main Pipe" type="channel">
+      <property name="diameter">0.06</property>
+      <property name="length">10.0</property>
+    </component>
+    <component id="branch1" name="Branch 1" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">8.0</property>
+    </component>
+    <component id="branch2" name="Branch 2" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">8.0</property>
+    </component>
+  </components>
+  <connections>
+    <connection from_node="inlet" to_node="junction" component="main_pipe" />
+    <connection from_node="junction" to_node="outlet1" component="branch1" />
+    <connection from_node="junction" to_node="outlet2" component="branch2" />
+  </connections>
+  <simulation>
+    <parameter name="total_flow_rate">0.012</parameter>
+    <parameter name="temperature">35.0</parameter>
+    <parameter name="inlet_pressure">180000.0</parameter>
+    <parameter name="oil_density">900.0</parameter>
+    <parameter name="oil_type">SAE30</parameter>
+    <parameter name="max_iterations">100</parameter>
+    <parameter name="tolerance">1e-6</parameter>
+  </simulation>
+</network>

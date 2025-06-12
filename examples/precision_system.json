@@ -1,0 +1,172 @@
+{
+  "network_name": "Precision Machining Lubrication",
+  "description": "High-pressure precision lubrication for CNC machines",
+  "nodes": [
+    {
+      "id": "high_pressure_pump",
+      "name": "High Pressure Pump",
+      "elevation": 0.0,
+      "type": "inlet",
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "pressure_regulator",
+      "name": "Pressure Regulator",
+      "elevation": 0.5,
+      "type": "junction",
+      "x": 5.0,
+      "y": 0.0
+    },
+    {
+      "id": "spindle_manifold",
+      "name": "Spindle Manifold",
+      "elevation": 1.0,
+      "type": "junction",
+      "x": 10.0,
+      "y": 0.0
+    },
+    {
+      "id": "tool_manifold",
+      "name": "Tool Manifold",
+      "elevation": 1.0,
+      "type": "junction",
+      "x": 15.0,
+      "y": 0.0
+    },
+    {
+      "id": "spindle_bearing",
+      "name": "Spindle Bearing",
+      "elevation": 1.2,
+      "type": "outlet",
+      "x": 12.0,
+      "y": 3.0
+    },
+    {
+      "id": "tool_coolant",
+      "name": "Tool Coolant",
+      "elevation": 1.0,
+      "type": "outlet",
+      "x": 18.0,
+      "y": 0.0
+    },
+    {
+      "id": "way_lubrication",
+      "name": "Way Lubrication",
+      "elevation": 0.8,
+      "type": "outlet",
+      "x": 20.0,
+      "y": -3.0
+    }
+  ],
+  "components": [
+    {
+      "id": "main_line",
+      "name": "Main Pressure Line",
+      "type": "channel",
+      "diameter": 0.06,
+      "length": 5.0
+    },
+    {
+      "id": "spindle_line",
+      "name": "Spindle Line",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 3.0
+    },
+    {
+      "id": "tool_line",
+      "name": "Tool Line",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 5.0
+    },
+    {
+      "id": "way_line",
+      "name": "Way Lubrication Line",
+      "type": "channel",
+      "diameter": 0.03,
+      "length": 8.0
+    },
+    {
+      "id": "spindle_nozzle",
+      "name": "Precision Spindle Nozzle",
+      "type": "nozzle",
+      "diameter": 0.015,
+      "nozzle_type": "flow_nozzle"
+    },
+    {
+      "id": "tool_nozzle",
+      "name": "Tool Coolant Nozzle",
+      "type": "nozzle",
+      "diameter": 0.012,
+      "nozzle_type": "venturi"
+    },
+    {
+      "id": "way_nozzle",
+      "name": "Way Lubrication Nozzle",
+      "type": "nozzle",
+      "diameter": 0.02,
+      "nozzle_type": "sharp_edged"
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "high_pressure_pump",
+      "to_node": "pressure_regulator",
+      "component": "main_line"
+    },
+    {
+      "from_node": "pressure_regulator",
+      "to_node": "spindle_manifold",
+      "component": "spindle_line"
+    },
+    {
+      "from_node": "pressure_regulator",
+      "to_node": "tool_manifold",
+      "component": "tool_line"
+    },
+    {
+      "from_node": "spindle_manifold",
+      "to_node": "spindle_bearing",
+      "component": "spindle_nozzle"
+    },
+    {
+      "from_node": "tool_manifold",
+      "to_node": "tool_coolant",
+      "component": "tool_nozzle"
+    },
+    {
+      "from_node": "tool_manifold",
+      "to_node": "way_lubrication",
+      "component": "way_line"
+    }
+  ],
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 0.008,
+      "temperature": 25.0,
+      "inlet_pressure": 500000.0,
+      "outlet_pressure": null
+    },
+    "fluid_properties": {
+      "oil_density": 850.0,
+      "oil_type": "SAE10"
+    },
+    "solver_settings": {
+      "max_iterations": 100,
+      "tolerance": 1e-06,
+      "relaxation_factor": 0.8
+    },
+    "output_settings": {
+      "output_units": "metric",
+      "detailed_output": true,
+      "save_results": false,
+      "results_file": null
+    }
+  },
+  "metadata": {
+    "created_by": "NetworkBuilder",
+    "version": "1.0"
+  }
+}

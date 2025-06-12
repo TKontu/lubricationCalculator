@@ -1,0 +1,65 @@
+{
+  "network_name": "Example Network",
+  "simulation_parameters": {
+    "flow_parameters": {
+      "total_flow_rate": 0.015,
+      "temperature": 40.0,
+      "inlet_pressure": 200000.0,
+      "outlet_pressure": null
+    },
+    "fluid_properties": {
+      "oil_density": 900.0,
+      "oil_type": "SAE30"
+    },
+    "solver_settings": {
+      "max_iterations": 100,
+      "tolerance": 1e-06,
+      "relaxation_factor": 0.8
+    },
+    "output_settings": {
+      "output_units": "metric",
+      "detailed_output": true,
+      "save_results": false,
+      "results_file": null
+    }
+  },
+  "connection_flows": {
+    "main_channel": 0.015,
+    "branch1_channel": 0.009060916428227074,
+    "branch2_channel": 0.005939083571772925
+  },
+  "solution_info": {
+    "converged": true,
+    "iterations": 3,
+    "total_flow_rate": 0.015,
+    "inlet_pressure": 200000.0,
+    "temperature": 40.0,
+    "viscosity": 0.1022910384490317,
+    "fluid_properties": {
+      "density": 900.0,
+      "viscosity": 0.1022910384490317
+    },
+    "pressure_drops": {
+      "main_channel": 15378.890564226116,
+      "branch1_channel": 48448.47965696638,
+      "branch2_channel": 58013.515682869
+    },
+    "node_pressures": {
+      "37d175a4": 200000.0,
+      "0e8c7363": 175792.1094357739,
+      "91d4bbf0": 118514.62977880752,
+      "ce81c38b": 113364.09375290488
+    }
+  },
+  "analysis": {
+    "adequate": true,
+    "issues": [],
+    "recommendations": [],
+    "outlet_pressures": {
+      "Outlet 1": 118514.62977880752,
+      "Outlet 2": 113364.09375290488
+    },
+    "min_outlet_pressure": 113364.09375290488,
+    "max_outlet_pressure": 118514.62977880752
+  }
+}

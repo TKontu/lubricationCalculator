@@ -1,0 +1,74 @@
+<?xml version='1.0' encoding='utf-8'?>
+<network name="Industrial Lubrication System" description="Multi-zone industrial lubrication network">
+  <nodes>
+    <node id="pump_outlet" name="Pump Outlet" elevation="0.0" type="inlet" x="0.0" y="0.0" />
+    <node id="main_manifold" name="Main Manifold" elevation="1.0" type="junction" x="15.0" y="0.0" />
+    <node id="zone1_manifold" name="Zone 1 Manifold" elevation="2.0" type="junction" x="25.0" y="10.0" />
+    <node id="zone2_manifold" name="Zone 2 Manifold" elevation="2.0" type="junction" x="25.0" y="-10.0" />
+    <node id="bearing1" name="Bearing 1" elevation="2.5" type="outlet" x="35.0" y="15.0" />
+    <node id="bearing2" name="Bearing 2" elevation="2.5" type="outlet" x="35.0" y="5.0" />
+    <node id="bearing3" name="Bearing 3" elevation="2.5" type="outlet" x="35.0" y="-5.0" />
+    <node id="bearing4" name="Bearing 4" elevation="2.5" type="outlet" x="35.0" y="-15.0" />
+  </nodes>
+  <components>
+    <component id="main_supply" name="Main Supply Line" type="channel">
+      <property name="diameter">0.12</property>
+      <property name="length">15.0</property>
+    </component>
+    <component id="zone1_supply" name="Zone 1 Supply" type="channel">
+      <property name="diameter">0.08</property>
+      <property name="length">12.0</property>
+    </component>
+    <component id="zone2_supply" name="Zone 2 Supply" type="channel">
+      <property name="diameter">0.08</property>
+      <property name="length">12.0</property>
+    </component>
+    <component id="bearing1_line" name="Bearing 1 Line" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">8.0</property>
+    </component>
+    <component id="bearing2_line" name="Bearing 2 Line" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">6.0</property>
+    </component>
+    <component id="bearing3_line" name="Bearing 3 Line" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">6.0</property>
+    </component>
+    <component id="bearing4_line" name="Bearing 4 Line" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">8.0</property>
+    </component>
+    <component id="nozzle1" name="Bearing 1 Nozzle" type="nozzle">
+      <property name="diameter">0.03</property>
+      <property name="nozzle_type">venturi</property>
+    </component>
+    <component id="nozzle2" name="Bearing 2 Nozzle" type="nozzle">
+      <property name="diameter">0.025</property>
+      <property name="nozzle_type">rounded</property>
+    </component>
+    <component id="nozzle3" name="Bearing 3 Nozzle" type="nozzle">
+      <property name="diameter">0.025</property>
+      <property name="nozzle_type">rounded</property>
+    </component>
+    <component id="nozzle4" name="Bearing 4 Nozzle" type="nozzle">
+      <property name="diameter">0.03</property>
+      <property name="nozzle_type">venturi</property>
+    </component>
+  </components>
+  <connections>
+    <connection from_node="pump_outlet" to_node="main_manifold" component="main_supply" />
+    <connection from_node="main_manifold" to_node="zone1_manifold" component="zone1_supply" />
+    <connection from_node="main_manifold" to_node="zone2_manifold" component="zone2_supply" />
+    <connection from_node="zone1_manifold" to_node="bearing1" component="bearing1_line" />
+    <connection from_node="zone1_manifold" to_node="bearing2" component="bearing2_line" />
+    <connection from_node="zone2_manifold" to_node="bearing3" component="bearing3_line" />
+    <connection from_node="zone2_manifold" to_node="bearing4" component="bearing4_line" />
+  </connections>
+  <simulation>
+    <parameter name="flow_parameters">{'total_flow_rate': 0.04, 'temperature': 50.0, 'inlet_pressure': 300000.0, 'outlet_pressure': None}</parameter>
+    <parameter name="fluid_properties">{'oil_density': 920.0, 'oil_type': 'SAE40'}</parameter>
+    <parameter name="solver_settings">{'max_iterations': 100, 'tolerance': 1e-06, 'relaxation_factor': 0.8}</parameter>
+    <parameter name="output_settings">{'output_units': 'metric', 'detailed_output': True, 'save_results': False, 'results_file': None}</parameter>
+  </simulation>
+</network>

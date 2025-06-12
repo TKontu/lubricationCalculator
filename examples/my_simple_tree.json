@@ -1,0 +1,105 @@
+{
+  "network_name": "My Simple Tree",
+  "description": "A simple tree network with two outlets",
+  "nodes": [
+    {
+      "id": "inlet",
+      "name": "Main Inlet",
+      "elevation": 0.0,
+      "type": "inlet",
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "junction",
+      "name": "Main Junction",
+      "elevation": 1.0,
+      "type": "junction",
+      "x": 10.0,
+      "y": 0.0
+    },
+    {
+      "id": "outlet1",
+      "name": "Outlet 1",
+      "elevation": 2.0,
+      "type": "outlet",
+      "x": 20.0,
+      "y": 5.0
+    },
+    {
+      "id": "outlet2",
+      "name": "Outlet 2",
+      "elevation": 1.5,
+      "type": "outlet",
+      "x": 20.0,
+      "y": -5.0
+    }
+  ],
+  "components": [
+    {
+      "id": "main_channel",
+      "name": "Main Channel",
+      "type": "channel",
+      "diameter": 0.08,
+      "length": 10.0
+    },
+    {
+      "id": "branch1",
+      "name": "Branch 1",
+      "type": "channel",
+      "diameter": 0.05,
+      "length": 8.0
+    },
+    {
+      "id": "branch2",
+      "name": "Branch 2",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 6.0
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "inlet",
+      "to_node": "junction",
+      "component": "main_channel"
+    },
+    {
+      "from_node": "junction",
+      "to_node": "outlet1",
+      "component": "branch1"
+    },
+    {
+      "from_node": "junction",
+      "to_node": "outlet2",
+      "component": "branch2"
+    }
+  ],
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 0.018,
+      "temperature": 40.0,
+      "inlet_pressure": 220000.0,
+      "outlet_pressure": null
+    },
+    "fluid_properties": {
+      "oil_density": 900.0,
+      "oil_type": "SAE30"
+    },
+    "solver_settings": {
+      "max_iterations": 100,
+      "tolerance": 1e-06,
+      "relaxation_factor": 0.8
+    },
+    "output_settings": {
+      "output_units": "metric",
+      "detailed_output": true,
+      "save_results": false,
+      "results_file": null
+    }
+  },
+  "metadata": {
+    "created_by": "NetworkBuilder",
+    "version": "1.0"
+  }
+}

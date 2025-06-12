@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<network name="Example Network" description="A simple example network with two outlets">
+  <nodes>
+    <node id="inlet" name="Inlet" elevation="0.0" type="inlet" x="0.0" y="0.0" />
+    <node id="junction1" name="Junction 1" elevation="1.0" type="junction" x="10.0" y="0.0" />
+    <node id="outlet1" name="Outlet 1" elevation="2.0" type="outlet" x="20.0" y="5.0" />
+    <node id="outlet2" name="Outlet 2" elevation="1.5" type="outlet" x="20.0" y="-5.0" />
+  </nodes>
+  <components>
+    <component id="main_channel" name="Main Channel" type="channel">
+      <property name="diameter">0.08</property>
+      <property name="length">10.0</property>
+    </component>
+    <component id="branch1_channel" name="Branch 1 Channel" type="channel">
+      <property name="diameter">0.05</property>
+      <property name="length">8.0</property>
+    </component>
+    <component id="branch2_channel" name="Branch 2 Channel" type="channel">
+      <property name="diameter">0.04</property>
+      <property name="length">6.0</property>
+    </component>
+    <component id="nozzle1" name="Nozzle 1" type="nozzle">
+      <property name="diameter">0.025</property>
+      <property name="nozzle_type">venturi</property>
+    </component>
+    <component id="nozzle2" name="Nozzle 2" type="nozzle">
+      <property name="diameter">0.02</property>
+      <property name="nozzle_type">sharp_edged</property>
+    </component>
+  </components>
+  <connections>
+    <connection from_node="inlet" to_node="junction1" component="main_channel" />
+    <connection from_node="junction1" to_node="outlet1" component="branch1_channel" />
+    <connection from_node="junction1" to_node="outlet2" component="branch2_channel" />
+  </connections>
+  <simulation>
+    <parameter name="flow_parameters">{'total_flow_rate': 0.015, 'temperature': 40.0, 'inlet_pressure': 200000.0, 'outlet_pressure': None}</parameter>
+    <parameter name="fluid_properties">{'oil_density': 900.0, 'oil_type': 'SAE30'}</parameter>
+    <parameter name="solver_settings">{'max_iterations': 100, 'tolerance': 1e-06, 'relaxation_factor': 0.8}</parameter>
+    <parameter name="output_settings">{'output_units': 'metric', 'detailed_output': True, 'save_results': False, 'results_file': None}</parameter>
+  </simulation>
+</network>

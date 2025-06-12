@@ -1,0 +1,213 @@
+{
+  "network_name": "Industrial Lubrication System",
+  "description": "Multi-zone industrial lubrication network",
+  "nodes": [
+    {
+      "id": "pump_outlet",
+      "name": "Pump Outlet",
+      "elevation": 0.0,
+      "type": "inlet",
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "main_manifold",
+      "name": "Main Manifold",
+      "elevation": 1.0,
+      "type": "junction",
+      "x": 15.0,
+      "y": 0.0
+    },
+    {
+      "id": "zone1_manifold",
+      "name": "Zone 1 Manifold",
+      "elevation": 2.0,
+      "type": "junction",
+      "x": 25.0,
+      "y": 10.0
+    },
+    {
+      "id": "zone2_manifold",
+      "name": "Zone 2 Manifold",
+      "elevation": 2.0,
+      "type": "junction",
+      "x": 25.0,
+      "y": -10.0
+    },
+    {
+      "id": "bearing1",
+      "name": "Bearing 1",
+      "elevation": 2.5,
+      "type": "outlet",
+      "x": 35.0,
+      "y": 15.0
+    },
+    {
+      "id": "bearing2",
+      "name": "Bearing 2",
+      "elevation": 2.5,
+      "type": "outlet",
+      "x": 35.0,
+      "y": 5.0
+    },
+    {
+      "id": "bearing3",
+      "name": "Bearing 3",
+      "elevation": 2.5,
+      "type": "outlet",
+      "x": 35.0,
+      "y": -5.0
+    },
+    {
+      "id": "bearing4",
+      "name": "Bearing 4",
+      "elevation": 2.5,
+      "type": "outlet",
+      "x": 35.0,
+      "y": -15.0
+    }
+  ],
+  "components": [
+    {
+      "id": "main_supply",
+      "name": "Main Supply Line",
+      "type": "channel",
+      "diameter": 0.12,
+      "length": 15.0
+    },
+    {
+      "id": "zone1_supply",
+      "name": "Zone 1 Supply",
+      "type": "channel",
+      "diameter": 0.08,
+      "length": 12.0
+    },
+    {
+      "id": "zone2_supply",
+      "name": "Zone 2 Supply",
+      "type": "channel",
+      "diameter": 0.08,
+      "length": 12.0
+    },
+    {
+      "id": "bearing1_line",
+      "name": "Bearing 1 Line",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 8.0
+    },
+    {
+      "id": "bearing2_line",
+      "name": "Bearing 2 Line",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 6.0
+    },
+    {
+      "id": "bearing3_line",
+      "name": "Bearing 3 Line",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 6.0
+    },
+    {
+      "id": "bearing4_line",
+      "name": "Bearing 4 Line",
+      "type": "channel",
+      "diameter": 0.04,
+      "length": 8.0
+    },
+    {
+      "id": "nozzle1",
+      "name": "Bearing 1 Nozzle",
+      "type": "nozzle",
+      "diameter": 0.03,
+      "nozzle_type": "venturi"
+    },
+    {
+      "id": "nozzle2",
+      "name": "Bearing 2 Nozzle",
+      "type": "nozzle",
+      "diameter": 0.025,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "nozzle3",
+      "name": "Bearing 3 Nozzle",
+      "type": "nozzle",
+      "diameter": 0.025,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "nozzle4",
+      "name": "Bearing 4 Nozzle",
+      "type": "nozzle",
+      "diameter": 0.03,
+      "nozzle_type": "venturi"
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "pump_outlet",
+      "to_node": "main_manifold",
+      "component": "main_supply"
+    },
+    {
+      "from_node": "main_manifold",
+      "to_node": "zone1_manifold",
+      "component": "zone1_supply"
+    },
+    {
+      "from_node": "main_manifold",
+      "to_node": "zone2_manifold",
+      "component": "zone2_supply"
+    },
+    {
+      "from_node": "zone1_manifold",
+      "to_node": "bearing1",
+      "component": "bearing1_line"
+    },
+    {
+      "from_node": "zone1_manifold",
+      "to_node": "bearing2",
+      "component": "bearing2_line"
+    },
+    {
+      "from_node": "zone2_manifold",
+      "to_node": "bearing3",
+      "component": "bearing3_line"
+    },
+    {
+      "from_node": "zone2_manifold",
+      "to_node": "bearing4",
+      "component": "bearing4_line"
+    }
+  ],
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 0.04,
+      "temperature": 50.0,
+      "inlet_pressure": 300000.0,
+      "outlet_pressure": null
+    },
+    "fluid_properties": {
+      "oil_density": 920.0,
+      "oil_type": "SAE40"
+    },
+    "solver_settings": {
+      "max_iterations": 100,
+      "tolerance": 1e-06,
+      "relaxation_factor": 0.8
+    },
+    "output_settings": {
+      "output_units": "metric",
+      "detailed_output": true,
+      "save_results": false,
+      "results_file": null
+    }
+  },
+  "metadata": {
+    "created_by": "NetworkBuilder",
+    "version": "1.0"
+  }
+}
