@@ -65,7 +65,10 @@ class NodalMatrixSolver:
             "SAE30": {"A": 0.0001, "B": 1200, "C": 140},
             "SAE40": {"A": 0.00015, "B": 1300, "C": 142},
             "SAE50": {"A": 0.0002, "B": 1400, "C": 145},
-            "SAE60": {"A": 0.00025, "B": 1500, "C": 148}
+            "SAE60": {"A": 0.00025, "B": 1500, "C": 148},
+            "VG220": {"A": 0.000064, "B": 1455, "C": 131},
+            "VG320": {"A": 0.000064, "B": 1520, "C": 131},
+            "VG460": {"A": 0.000064, "B": 1576, "C": 131}
         }
         
         if self.oil_type not in viscosity_params:
@@ -195,6 +198,172 @@ class NodalMatrixSolver:
         
         return connection_flows, solution_info
     
+    
+    def _flow_for_pressure(
+        self,
+        network: FlowNetwork,
+        inlet_pressure: float,
+        outlet_pressure: float,
+        pump_flow_rate: float,
+        fluid_props: Dict[str, float]
+    ) -> Tuple[Dict[str, float], Dict[str, float], float]:
+        """
+        For a given inlet pressure, assemble conductances, solve nodal matrix,
+        compute every edge flow, and return the total flow delivered at the inlet.
+        """
+        # A) Known‐pressure nodes
+        known = {network.inlet_node.id: inlet_pressure}
+        for out in network.outlet_nodes:
+            known[out.id] = outlet_pressure
+
+        # B) Unknown nodes
+        unknown = [n for n in network.nodes.values() if n.id not in known]
+        N = len(unknown)
+        idx = {n.id: i for i, n in enumerate(unknown)}
+
+        # C) Estimate conductances G_e = 1/R_e at a per‐branch guess Q0
+        Q0 = pump_flow_rate / max(1, len(network.outlet_nodes))
+        G_e = {}
+        for conn in network.connections:
+            R = self._calculate_connection_resistance(conn, Q0, fluid_props)
+            G_e[conn.component.id] = (1.0 / R) if R > 0 else 1e12
+
+        # D) Build sparse nodal matrix A·p = b
+        if N > 0:
+            from scipy.sparse import lil_matrix
+            import numpy as np
+
+            A = lil_matrix((N, N))
+            b = np.zeros(N)
+
+            for conn in network.connections:
+                g = G_e[conn.component.id]
+                i_id, j_id = conn.from_node.id, conn.to_node.id
+
+                # Diagonal entries
+                if i_id in idx: A[idx[i_id], idx[i_id]] += g
+                if j_id in idx: A[idx[j_id], idx[j_id]] += g
+
+                # Off-diagonals for unknown‐unknown
+                if i_id in idx and j_id in idx:
+                    A[idx[i_id], idx[j_id]] -= g
+                    A[idx[j_id], idx[i_id]] -= g
+
+                # RHS contributions for known‐unknown
+                if i_id in idx and j_id in known:
+                    b[idx[i_id]] += g * known[j_id]
+                if j_id in idx and i_id in known:
+                    b[idx[j_id]] += g * known[i_id]
+
+            # Solve for unknown node pressures
+            from scipy.sparse.linalg import spsolve
+            p_unknown = spsolve(A.tocsr(), b)
+
+            # Combine pressures
+            node_pressures = known.copy()
+            for node_id, i in idx.items():
+                node_pressures[node_id] = p_unknown[i]
+        else:
+            node_pressures = known.copy()
+
+        # E) Compute each connection flow
+        conn_flows = {}
+        for conn in network.connections:
+            p_from = node_pressures[conn.from_node.id]
+            p_to   = node_pressures[conn.to_node.id]
+            conn_flows[conn.component.id] = G_e[conn.component.id] * (p_from - p_to)
+
+        # F) Total delivered at inlet
+        delivered = sum(
+            conn_flows[c.component.id]
+            for c in network.adjacency_list[network.inlet_node.id]
+        )
+
+        return conn_flows, node_pressures, delivered
+
+
+    def solve_nodal_network_with_pump_physics(
+        self,
+        network: FlowNetwork,
+        pump_flow_rate: float,
+        temperature: float,
+        pump_max_pressure: float = 1e6,
+        outlet_pressure: float = 101325.0,
+        max_iterations: Optional[int] = None,
+        tolerance: Optional[float] = None
+    ) -> Tuple[Dict[str, float], Dict]:
+        """
+        Displacement-driven nodal solver: 
+        - Enforces fixed Q_pump
+        - Finds the inlet pressure required to push that Q through the network
+        - Throttles Q if required pressure > pump_max_pressure
+        """
+        # 1) Validate network
+        is_valid, errors = network.validate_network()
+        if not is_valid:
+            raise ValueError(f"Invalid network: {errors}")
+
+        # 2) Solver parameters
+        max_iter = max_iterations or self.config.max_iterations
+        tol = tolerance or self.config.tolerance
+        # Convert tol (rel ΔP) into a flow tolerance ΔQ ≈ tol·Q_pump
+        q_tol = tol * pump_flow_rate
+
+        # 3) Fluid properties
+        viscosity = self.calculate_viscosity(temperature)
+        fluid_props = {'density': self.oil_density, 'viscosity': viscosity}
+
+        # 4) Pressure bracket
+        p_lo = outlet_pressure
+        p_hi = pump_max_pressure
+
+        # 5) Bisection loop
+        for iteration in range(max_iter):
+            p_guess = 0.5 * (p_lo + p_hi)
+
+            # 5a) For this inlet pressure, compute the network flows
+            conn_flows, node_pressures, q_delivered = (
+                self._flow_for_pressure(
+                    network, p_guess, outlet_pressure, pump_flow_rate, fluid_props
+                )
+            )
+
+            # 5b) Check pump adequacy / break if flow falls below fraction
+            if q_delivered < self.config.min_flow_fraction * pump_flow_rate:
+                break
+
+            # 5c) Converged?
+            dq = q_delivered - pump_flow_rate
+            if abs(dq) < q_tol:
+                break
+
+            # 5d) Narrow bracket
+            if dq > 0:
+                # network “easier” than pump → reduce pressure
+                p_hi = p_guess
+            else:
+                # network “harder” → need more head
+                p_lo = p_guess
+
+        # 6) Build solution_info
+        required_head = p_guess
+        solution_info = {
+            'required_inlet_pressure': required_head,
+            'actual_flow_rate': q_delivered,
+            'pump_adequate': (required_head <= pump_max_pressure),
+            'iterations': iteration + 1,
+            'node_pressures': node_pressures,
+            'pressure_drops': {
+                cid: network.connections[i].component.calculate_pressure_drop(f, fluid_props)
+                for i, (cid, f) in enumerate(conn_flows.items())
+            },
+            'fluid_properties': fluid_props
+        }
+
+        return conn_flows, solution_info
+
+
+
     def _solve_multiple_outlets(self, 
                                network: FlowNetwork,
                                total_flow_rate: float,

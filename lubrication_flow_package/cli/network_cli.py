@@ -217,13 +217,20 @@ def simulate_network(config_file: str, solver_type: str = 'network', output_file
                 inlet_pressure=sim_config.inlet_pressure
             )
         elif solver_type.lower() == 'nodal':
-            solver = NodalMatrixSolver(oil_density=sim_config.oil_density, oil_type=sim_config.oil_type)
-            connection_flows, solution_info = solver.solve_nodal_network(
-                network,
-                sim_config.total_flow_rate,
-                sim_config.temperature,
-                inlet_pressure=sim_config.inlet_pressure,
-                outlet_pressure=sim_config.outlet_pressure or 101325.0
+            solver = NodalMatrixSolver(
+                oil_density=sim_config.oil_density,
+                oil_type=sim_config.oil_type
+            )
+            connection_flows, solution_info = (
+                solver.solve_nodal_network_with_pump_physics(
+                    network,
+                    pump_flow_rate=sim_config.total_flow_rate,
+                    temperature=sim_config.temperature,
+                    pump_max_pressure=sim_config.inlet_pressure,
+                    outlet_pressure=sim_config.outlet_pressure or 101325.0,
+                    max_iterations=sim_config.solver_settings.max_iterations,
+                    tolerance=sim_config.solver_settings.tolerance
+                )
             )
         else:
             print(f"❌ Unknown solver type: {solver_type}")
