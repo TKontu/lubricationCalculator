@@ -13,26 +13,26 @@
     {
       "id": "junction1",
       "name": "Junction 1",
-      "elevation": 1.0,
+      "elevation": 0.0,
       "type": "junction",
-      "x": 10.0,
-      "y": 0.0
+      "x": 0.0,
+      "y": 10.0
     },
     {
       "id": "outlet1",
       "name": "Outlet 1",
-      "elevation": 2.0,
+      "elevation": 0.1,
       "type": "outlet",
-      "x": 20.0,
-      "y": 5.0
+      "x": 0.1,
+      "y": 15.0
     },
     {
       "id": "outlet2",
       "name": "Outlet 2",
-      "elevation": 1.5,
+      "elevation": 0.0,
       "type": "outlet",
-      "x": 20.0,
-      "y": -5.0
+      "x": 0.0,
+      "y": 15.0
     }
   ],
   "components": [
@@ -40,35 +40,35 @@
       "id": "main_channel",
       "name": "Main Channel",
       "type": "channel",
-      "diameter": 0.08,
+      "diameter": 0.030,
       "length": 10.0
     },
     {
       "id": "branch1_channel",
       "name": "Branch 1 Channel",
       "type": "channel",
-      "diameter": 0.05,
-      "length": 8.0
+      "diameter": 0.025,
+      "length": 1.0
     },
     {
       "id": "branch2_channel",
       "name": "Branch 2 Channel",
       "type": "channel",
-      "diameter": 0.04,
-      "length": 6.0
+      "diameter": 0.025,
+      "length": 1.0
     },
     {
       "id": "nozzle1",
       "name": "Nozzle 1",
       "type": "nozzle",
-      "diameter": 0.025,
-      "nozzle_type": "venturi"
+      "diameter": 0.002,
+      "nozzle_type": "sharp_edged"
     },
     {
       "id": "nozzle2",
       "name": "Nozzle 2",
       "type": "nozzle",
-      "diameter": 0.02,
+      "diameter": 0.002,
       "nozzle_type": "sharp_edged"
     }
   ],
@@ -91,14 +91,14 @@
   ],
   "simulation": {
     "flow_parameters": {
-      "total_flow_rate": 0.015,
-      "temperature": 40.0,
+      "total_flow_rate": 0.02,
+      "temperature": 60.0,
       "inlet_pressure": 200000.0,
       "outlet_pressure": null
     },
     "fluid_properties": {
       "oil_density": 900.0,
-      "oil_type": "SAE30"
+      "oil_type": "VG320"
     },
     "solver_settings": {
       "max_iterations": 100,
@@ -115,6 +115,6 @@
   "metadata": {
     "created_by": "network_cli",
     "version": "1.0",
-    "notes": "Template network for demonstration"
+    "notes": "1st manual input test"
   }
 }
