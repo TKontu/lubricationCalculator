@@ -9,7 +9,6 @@ from typing import Optional
 
 from ..config.network_config import NetworkConfigLoader, NetworkConfigSaver
 from ..config.simulation_config import SimulationConfig
-from ..solvers.network_flow_solver import NetworkFlowSolver
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
 
 
@@ -158,7 +157,7 @@ def create_network_template(output_file: str, format_type: str = 'json'):
         raise ValueError(f"Unsupported format: {format_type}")
 
 
-def simulate_network(config_file: str, solver_type: str = 'network', output_file: Optional[str] = None):
+def simulate_network(config_file: str, output_file: Optional[str] = None):
     """Simulate a network from configuration file"""
     
     # Determine file format
@@ -208,47 +207,30 @@ def simulate_network(config_file: str, solver_type: str = 'network', output_file
     
     # Create solver
     try:
-        if solver_type.lower() == 'network':
-            solver = NetworkFlowSolver(oil_density=sim_config.oil_density, oil_type=sim_config.oil_type)
-            connection_flows, solution_info = solver.solve_network_flow(
-                network, 
-                sim_config.total_flow_rate, 
-                sim_config.temperature,
-                inlet_pressure=sim_config.inlet_pressure
+        solver = NodalMatrixSolver(
+            oil_density=sim_config.oil_density,
+            oil_type=sim_config.oil_type
+        )
+        connection_flows, solution_info = (
+            solver.solve_nodal_network_with_pump_physics(
+                network,
+                pump_flow_rate=sim_config.total_flow_rate,
+                temperature=sim_config.temperature,
+                pump_max_pressure=sim_config.inlet_pressure,
+                outlet_pressure=sim_config.outlet_pressure or 101325.0,
+                max_iterations=sim_config.solver_settings.max_iterations,
+                tolerance=sim_config.solver_settings.tolerance
             )
-        elif solver_type.lower() == 'nodal':
-            solver = NodalMatrixSolver(
-                oil_density=sim_config.oil_density,
-                oil_type=sim_config.oil_type
-            )
-            connection_flows, solution_info = (
-                solver.solve_nodal_network_with_pump_physics(
-                    network,
-                    pump_flow_rate=sim_config.total_flow_rate,
-                    temperature=sim_config.temperature,
-                    pump_max_pressure=sim_config.inlet_pressure,
-                    outlet_pressure=sim_config.outlet_pressure or 101325.0,
-                    max_iterations=sim_config.solver_settings.max_iterations,
-                    tolerance=sim_config.solver_settings.tolerance
-                )
-            )
-        else:
-            print(f"❌ Unknown solver type: {solver_type}")
-            return False
-        
-        print(f"🔬 Simulation completed using {solver_type} solver")
+        )
+    
+        print(f"🔬 Simulation completed")
         
     except Exception as e:
         print(f"❌ Simulation failed: {e}")
         return False
     
-    # Print results (use NetworkFlowSolver for printing regardless of solver type)
-    if solver_type.lower() == 'nodal':
-        # Create a NetworkFlowSolver instance just for printing
-        print_solver = NetworkFlowSolver(oil_density=sim_config.oil_density, oil_type=sim_config.oil_type)
-        print_solver.print_results(network, connection_flows, solution_info)
-    else:
-        solver.print_results(network, connection_flows, solution_info)
+    # Print results
+    solver.print_results(network, connection_flows, solution_info)
     
     # Analyze system adequacy
     if hasattr(solver, 'analyze_system_adequacy'):
@@ -367,7 +349,7 @@ Examples:
     # Simulate command
     simulate_parser = subparsers.add_parser('simulate', help='Simulate a network from configuration file')
     simulate_parser.add_argument('config_file', help='Network configuration file')
-    simulate_parser.add_argument('--solver', choices=['network', 'nodal'], default='network',
+    simulate_parser.add_argument(default='network',
                                 help='Solver type to use (default: network)')
     simulate_parser.add_argument('--output', help='Save results to file')
     
@@ -380,7 +362,7 @@ Examples:
     if args.command == 'template':
         create_network_template(args.output, args.format)
     elif args.command == 'simulate':
-        success = simulate_network(args.config_file, args.solver, args.output)
+        success = simulate_network(args.config_file, args.output)
         sys.exit(0 if success else 1)
     elif args.command == 'validate':
         success = validate_network_config(args.config_file)

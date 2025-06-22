@@ -36,31 +36,31 @@ The solver implements the **nodal analysis method**:
 def solve_nodal_iterative(network, source_node_id, sink_node_id, Q_total, fluid_properties):
     # 1. Initialize edge flows
     Q_e = Q_total / number_of_edges
-    
+
     for iteration in range(max_iter):
         # 2. Compute resistances and conductances
         R_e = component.calculate_pressure_drop(Q_e) / Q_e
         G_e = 1.0 / R_e
-        
+
         # 3. Build conductance matrix A and RHS vector b
         for each connection (i,j):
             A[i,i] += G_e
             A[j,j] += G_e
             A[i,j] -= G_e
             A[j,i] -= G_e
-        
+
         b[source] = Q_total  # Flow injection
-        
+
         # 4. Solve linear system A·p = b
         pressures = spsolve(A, b)
-        
+
         # 5. Compute new flows
         Q_e_new = G_e * (p_i - p_j)
-        
+
         # 6. Check convergence
         if max(|Q_e_new - Q_e|) < tol_flow and max(|ΔP - R_e*Q_e|) < tol_pressure:
             break
-        
+
         Q_e = Q_e_new
 ```
 
@@ -79,7 +79,7 @@ solver = NodalMatrixSolver()
 pressures, flows = solver.solve_nodal_iterative(
     network=my_network,
     source_node_id="source_id",
-    sink_node_id="sink_id", 
+    sink_node_id="sink_id",
     Q_total=0.001,  # m³/s
     fluid_properties={'density': 900.0, 'viscosity': 0.01},
     tol_flow=1e-6,
@@ -95,7 +95,7 @@ class LinearResistanceComponent(FlowComponent):
     def __init__(self, resistance):
         super().__init__()
         self.resistance = resistance  # Pa·s/m³
-    
+
     def calculate_pressure_drop(self, flow_rate, fluid_properties):
         return self.resistance * abs(flow_rate)
 
@@ -104,7 +104,7 @@ class QuadraticResistanceComponent(FlowComponent):
         super().__init__()
         self.a = linear_coeff      # Pa·s/m³
         self.b = quadratic_coeff   # Pa·s²/m⁶
-    
+
     def calculate_pressure_drop(self, flow_rate, fluid_properties):
         Q = abs(flow_rate)
         return self.a * Q + self.b * Q * Q
@@ -113,23 +113,27 @@ class QuadraticResistanceComponent(FlowComponent):
 ## Network Topologies Supported
 
 ### 1. Series Networks
+
 ```
 Source --R1--> Node1 --R2--> Sink
 ```
 
-### 2. Parallel Networks  
+### 2. Parallel Networks
+
 ```
 Source --R1--> Sink
        --R2--> Sink
 ```
 
 ### 3. Y-Networks (Series-Parallel)
+
 ```
 Source --R1--> Junction --R2--> Sink
                         --R3--> Sink
 ```
 
 ### 4. Complex Multi-Junction Networks
+
 ```
 Source --R1--> J1 --R2--> J2 --R4--> Sink
                |          |
@@ -169,9 +173,10 @@ python test_nodal_matrix_solver.py
 ```
 
 Test cases cover:
+
 - ✅ Simple Y-network with analytical verification
 - ✅ Series networks
-- ✅ Parallel networks  
+- ✅ Parallel networks
 - ✅ Non-linear resistance components
 - ✅ Convergence tolerance verification
 
@@ -194,6 +199,7 @@ python nodal_solver_demo.py
 ```
 
 This demonstrates:
+
 - Series, parallel, and Y-networks
 - Non-linear resistance handling
 - Complex multi-junction networks
@@ -207,11 +213,11 @@ This demonstrates:
 class NodalMatrixSolver:
     def __init__(self, logger=None):
         """Initialize the nodal matrix solver"""
-    
-    def solve_nodal_iterative(self, 
+
+    def solve_nodal_iterative(self,
                              network: FlowNetwork,
                              source_node_id: str,
-                             sink_node_id: str, 
+                             sink_node_id: str,
                              Q_total: float,
                              fluid_properties: Dict,
                              tol_flow: float = 1e-6,
@@ -219,7 +225,7 @@ class NodalMatrixSolver:
                              max_iter: int = 20) -> Tuple[Dict[str, float], Dict[str, float]]:
         """
         Solve hydraulic network using iterative nodal-matrix method.
-        
+
         Args:
             network: FlowNetwork to solve
             source_node_id: ID of source node (flow injection)
@@ -229,7 +235,7 @@ class NodalMatrixSolver:
             tol_flow: Flow convergence tolerance (m³/s)
             tol_pressure: Pressure-flow law tolerance (Pa)
             max_iter: Maximum iterations
-            
+
         Returns:
             Tuple of (node_pressures, edge_flows)
         """
@@ -237,11 +243,11 @@ class NodalMatrixSolver:
 
 ### Parameters
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `tol_flow` | float | Flow convergence tolerance (m³/s) | 1e-6 |
-| `tol_pressure` | float | Pressure-flow law tolerance (Pa) | 1e2 |
-| `max_iter` | int | Maximum iterations | 20 |
+| Parameter      | Type  | Description                       | Default |
+| -------------- | ----- | --------------------------------- | ------- |
+| `tol_flow`     | float | Flow convergence tolerance (m³/s) | 1e-6    |
+| `tol_pressure` | float | Pressure-flow law tolerance (Pa)  | 1e2     |
+| `max_iter`     | int   | Maximum iterations                | 20      |
 
 ### Return Values
 
@@ -250,13 +256,13 @@ class NodalMatrixSolver:
 
 ## Advantages vs. Path-Based Methods
 
-| Aspect | Nodal Matrix | Path-Based |
-|--------|--------------|------------|
-| **Scalability** | O(N²) matrix | O(P) paths |
-| **Complex topologies** | Excellent | Can struggle |
-| **Multiple junctions** | Natural | Requires path enumeration |
-| **Sparse networks** | Efficient | Less efficient |
-| **Convergence** | Robust | Path-dependent |
+| Aspect                 | Nodal Matrix | Path-Based                |
+| ---------------------- | ------------ | ------------------------- |
+| **Scalability**        | O(N²) matrix | O(P) paths                |
+| **Complex topologies** | Excellent    | Can struggle              |
+| **Multiple junctions** | Natural      | Requires path enumeration |
+| **Sparse networks**    | Efficient    | Less efficient            |
+| **Convergence**        | Robust       | Path-dependent            |
 
 ## Limitations and Considerations
 
@@ -280,7 +286,7 @@ The nodal matrix solver integrates seamlessly with the existing lubrication flow
 
 ```python
 # Import alongside existing solvers
-from lubrication_flow_package.solvers import NetworkFlowSolver, NodalMatrixSolver
+NodalMatrixSolver
 
 # Use with existing network and component classes
 from lubrication_flow_package.network.flow_network import FlowNetwork

@@ -3,6 +3,7 @@ Utils subpackage - Utility functions and helpers
 """
 
 from .network_utils import *
+from .friction import *
 
 __all__ = [
     'find_all_paths', 'compute_path_pressure', 'estimate_resistance',

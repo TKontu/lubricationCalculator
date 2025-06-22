@@ -6,6 +6,8 @@ Enhanced with geometry-based and Reynolds number-dependent loss coefficients.
 import math
 from typing import Dict, Optional, Union
 from .base import FlowComponent, ComponentType, ConnectorType
+from lubrication_flow_package.components.channel import Channel
+from lubrication_flow_package.utils.friction import churchill_friction_factor
 
 
 class LossCoefficientCalculator:
@@ -145,7 +147,8 @@ class Connector(FlowComponent):
     """
     
     def __init__(self, connector_type: ConnectorType, diameter: float,
-                 diameter_out: float = None, loss_coefficient: float = None,
+                 diameter_out: float = None, 
+                 loss_coefficient: float = None,
                  component_id: str = None, name: str = "",
                  # Geometric parameters
                  bend_angle: float = 90.0,
@@ -190,6 +193,16 @@ class Connector(FlowComponent):
         self._fixed_loss_coefficient = loss_coefficient
         self.loss_coefficient = loss_coefficient or self._get_default_loss_coefficient()
         
+        stub_length = 0.000  # m, you can tune this later
+        if stub_length > 0:
+            self._stub_channel = Channel(
+                diameter=self.diameter,
+                length=stub_length,
+                roughness=getattr(self, "roughness", 0.00015)
+            )
+        else:
+            self._stub_channel = None
+
         # Validation
         if diameter <= 0:
             raise ValueError("Connector diameter must be positive")
@@ -317,22 +330,24 @@ class Connector(FlowComponent):
         if flow_rate <= 0:
             return 0
         
+        # 1) frictional drop through the stub channel (if present)
+        dp_pipe = 0.0
+        if self._stub_channel is not None:
+            dp_pipe = self._stub_channel.calculate_pressure_drop(
+                flow_rate, fluid_properties
+            )
+
+        # 2) minor‐loss via K‐factor
         density = fluid_properties['density']
-        
-        # Use inlet diameter for velocity calculation
-        area = math.pi * (self.diameter / 2) ** 2
+        area = math.pi * (self.diameter / 2.0) ** 2
         velocity = flow_rate / area
-        
-        # Calculate loss coefficient
         if self.auto_calculate_k:
             k = self.calculate_loss_coefficient(velocity, fluid_properties)
         else:
             k = self.loss_coefficient
-        
-        # Minor loss equation: ΔP = K * ρ * v² / 2
-        pressure_drop = k * density * velocity ** 2 / 2
-        
-        return pressure_drop
+        dp_minor = k * density * velocity * velocity / 2.0
+
+        return dp_pipe + dp_minor
     
     def set_geometric_parameters(self, **kwargs):
         """

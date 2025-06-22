@@ -161,7 +161,6 @@ class NodalMatrixSolver:
             
         else:
             # Multiple outlets case - use backward compatibility approach
-            # Note: The original solve_network_flow_nodal had limitations with realistic pressures
             # For now, we maintain backward compatibility but issue a warning
             self.logger.warning(
                 "Multiple outlet networks with realistic pressure values may give unrealistic flows. "
@@ -374,8 +373,6 @@ class NodalMatrixSolver:
                                tolerance: float) -> Tuple[Dict[str, float], Dict[str, float]]:
         """
         Solve network with multiple outlets using matrix-based nodal analysis.
-        
-        This method implements the approach from the original solve_network_flow_nodal.
         """
         # Assemble node indices
         all_nodes = list(network.nodes.values())
@@ -467,27 +464,46 @@ class NodalMatrixSolver:
         
         return connection_flows, node_pressures
     
-    def _calculate_connection_resistance(self, connection: Connection, 
-                                       fluid_properties: Dict, estimated_flow: float) -> float:
-        """Calculate resistance of a single connection"""
-        component = connection.component
-        
-        # Calculate component resistance (dP/dQ)
-        if estimated_flow > 1e-9:
-            # Use absolute flow perturbation to estimate resistance
-            delta_q = self.config.dq_absolute
-            dp1 = component.calculate_pressure_drop(estimated_flow, fluid_properties)
-            dp2 = component.calculate_pressure_drop(estimated_flow + delta_q, fluid_properties)
-            
-            if delta_q > 0:
-                resistance = (dp2 - dp1) / delta_q
-            else:
-                resistance = dp1 / estimated_flow if estimated_flow > 0 else 0
-        else:
-            # For very small flows, use linear approximation
-            resistance = component.calculate_pressure_drop(self.config.dq_absolute, fluid_properties) / self.config.dq_absolute
-        
-        return max(resistance, self.config.min_resistance)  # Ensure non-negative and above minimum
+    def _calculate_component_resistance(
+        self,
+        component,
+        fluid_properties: dict,
+        Q_est: float
+    ) -> float:
+        """
+        Compute R = d(ΔP)/dQ for a bare component (Channel, Connector, Nozzle)
+        by central-differencing its calculate_pressure_drop().
+        """
+        # baseline ΔP
+        dp0 = component.calculate_pressure_drop(Q_est, fluid_properties)
+
+        # finite-difference step
+        delta_q = max(abs(Q_est) * 1e-3, 1e-8)
+
+        # forward/backwards ΔP
+        dp_plus  = component.calculate_pressure_drop(Q_est + delta_q, fluid_properties)
+        dp_minus = component.calculate_pressure_drop(Q_est - delta_q, fluid_properties)
+
+        # slope
+        R = (dp_plus - dp_minus) / (2.0 * delta_q)
+
+        # floor
+        return max(R, self.config.min_resistance)
+
+    def _calculate_connection_resistance(
+        self,
+        connection: Connection,
+        fluid_properties: dict,
+        estimated_flow: float
+    ) -> float:
+        """
+        Compute R = d(ΔP)/dQ for a Connection, by extracting its .component.
+        """
+        return self._calculate_component_resistance(
+            connection.component,
+            fluid_properties,
+            estimated_flow
+        )
     
     def solve_nodal_iterative(self, 
                              network: FlowNetwork,
@@ -857,3 +873,72 @@ class NodalMatrixSolver:
                 self.logger.warning(f"Mass conservation violated at node {node_id}: "
                                   f"net_flow={net_flow:.6f}, expected={expected_net:.6f}, "
                                   f"error={error:.6f}")
+                
+
+    def print_results(self, network: FlowNetwork, connection_flows: Dict[str, float],
+                     solution_info: Dict):
+        """Print detailed results"""
+        print(f"\n{'='*70}")
+        print("NETWORK FLOW DISTRIBUTION RESULTS")
+        print(f"{'='*70}")
+        
+        print(f"Network: {network.name}")
+        print(f"Temperature: {solution_info['temperature']:.1f}°C")
+        print(f"Oil Type: {self.oil_type}")
+        print(f"Oil Density: {self.oil_density:.1f} kg/m³")
+        print(f"Dynamic Viscosity: {solution_info['viscosity']:.6f} Pa·s")
+        
+        # Handle different flow rate keys for backward compatibility
+        flow_rate_key = 'total_flow_rate' if 'total_flow_rate' in solution_info else 'actual_flow_rate'
+        if flow_rate_key in solution_info:
+            print(f"Total Flow Rate: {solution_info[flow_rate_key]*1000:.1f} L/s")
+        
+        print(f"Converged: {solution_info['converged']} (in {solution_info['iterations']} iterations)")
+        
+        # Handle different pressure keys
+        if 'inlet_pressure' in solution_info:
+            print(f"Inlet Pressure: {solution_info['inlet_pressure']/1000:.1f} kPa")
+        elif 'required_inlet_pressure' in solution_info:
+            print(f"Required Inlet Pressure: {solution_info['required_inlet_pressure']/1000:.1f} kPa")
+        
+        # Calculate pressure drops if not already calculated
+        if 'pressure_drops' not in solution_info:
+            solution_info['pressure_drops'] = {}
+            fluid_properties = solution_info.get('fluid_properties', {
+                'density': self.oil_density,
+                'viscosity': solution_info['viscosity']
+            })
+            
+            for connection in network.connections:
+                component = connection.component
+                flow_rate = connection_flows[component.id]
+                dp = component.calculate_pressure_drop(flow_rate, fluid_properties)
+                solution_info['pressure_drops'][component.id] = dp
+        
+        # Print connection flows
+        print(f"\n{'Component':<20} {'Type':<12} {'Flow Rate':<12} {'Pressure Drop'}")
+        print(f"{'Name':<20} {'':12} {'(L/s)':<12} {'(kPa)'}")
+        print("-" * 65)
+        
+        for connection in network.connections:
+            component = connection.component
+            flow_rate = connection_flows[component.id]
+            pressure_drop = solution_info['pressure_drops'].get(component.id, 0)
+            
+            print(f"{component.name:<20} {component.component_type.value:<12} "
+                  f"{flow_rate*1000:<12.3f} {pressure_drop/1000:<12.1f}")
+        
+        # Print node pressures
+        print(f"\n{'Node':<20} {'Pressure (kPa)':<15} {'Elevation (m)'}")
+        print("-" * 45)
+        
+        for node_id, pressure in solution_info['node_pressures'].items():
+            node = network.nodes[node_id]
+            print(f"{node.name:<20} {pressure/1000:<15.1f} {node.elevation:<12.1f}")
+        
+        # Print warnings if any
+        if 'warnings' in solution_info and solution_info['warnings']:
+            print(f"\n{'WARNINGS':<20}")
+            print("-" * 45)
+            for warning in solution_info['warnings']:
+                print(f"⚠️  {warning}")

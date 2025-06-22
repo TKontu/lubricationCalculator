@@ -5,6 +5,8 @@ Nozzle component - Represents flow nozzles or orifices
 import math
 from typing import Dict
 from .base import FlowComponent, ComponentType, NozzleType
+from .channel import Channel
+from lubrication_flow_package.utils.friction import churchill_friction_factor
 
 
 class Nozzle(FlowComponent):
@@ -23,6 +25,16 @@ class Nozzle(FlowComponent):
         else:
             self.discharge_coeff = discharge_coeff
         
+        stub_length = 0.000  # m, tune per your nozzle geometry
+        if stub_length > 0:
+            self._stub_channel = Channel(
+                diameter=self.diameter,
+                length=stub_length,
+                roughness=getattr(self, "roughness", 0.00015)
+            )
+        else:
+            self._stub_channel = None
+
         # Validation
         if diameter <= 0:
             raise ValueError("Nozzle diameter must be positive")
@@ -70,19 +82,21 @@ class Nozzle(FlowComponent):
         if flow_rate <= 0:
             return 0
         
+        # 1) stub‐pipe friction if configured
+        dp_pipe = 0.0
+        if self._stub_channel is not None:
+            dp_pipe = self._stub_channel.calculate_pressure_drop(
+                flow_rate, fluid_properties
+            )
+
+        # 2) orifice/minor loss
         density = fluid_properties['density']
-        
         area = self.get_flow_area()
         velocity = flow_rate / area
-        
-        # Orifice pressure drop calculation
         if self.nozzle_type == NozzleType.VENTURI:
-            # Venturi has lower permanent pressure loss due to diffuser recovery
-            K = ((1 / self.discharge_coeff ** 2) - 1) * 0.1  # 10% permanent loss
+            K = ((1.0 / self.discharge_coeff ** 2) - 1.0) * 0.1
         else:
-            # Standard orifice equation
-            K = (1 / self.discharge_coeff ** 2) - 1
-        
-        pressure_drop = K * density * velocity ** 2 / 2
-        
-        return pressure_drop
+            K = (1.0 / self.discharge_coeff ** 2) - 1.0
+        dp_minor = K * density * velocity * velocity / 2.0
+
+        return dp_pipe + dp_minor
