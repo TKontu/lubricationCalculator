@@ -141,6 +141,7 @@ class NodalMatrixSolver:
         
         # Use the iterative solver for all cases
         if len(outlet_nodes) == 1:
+            print("✅ Using solve_nodal_iterative")
             # Single outlet case - direct use of iterative solver
             outlet_node = outlet_nodes[0]
             
@@ -194,6 +195,9 @@ class NodalMatrixSolver:
             flow_rate = connection_flows[component.id]
             dp = component.calculate_pressure_drop(flow_rate, fluid_properties)
             solution_info['pressure_drops'][component.id] = dp
+        
+        for node_id in node_pressures:
+            node_pressures[node_id] += outlet_pressure
         
         return connection_flows, solution_info
     
@@ -429,12 +433,20 @@ class NodalMatrixSolver:
             # if one end known
             elif i_id in idx_map:
                 i = idx_map[i_id]
+                elevation_i = network.nodes[i_id].elevation
+                elevation_j = network.nodes[j_id].elevation
+                dp_hydro = fluid_properties['density'] * self.gravity * (elevation_j - elevation_i)
                 Gmat[i, i] += g
-                b[i] += g * known_nodes[j_id]
+                b[i] += g * (known_nodes[j_id] + dp_hydro)
+
             elif j_id in idx_map:
                 j = idx_map[j_id]
+                elevation_i = network.nodes[i_id].elevation
+                elevation_j = network.nodes[j_id].elevation
+                dp_hydro = fluid_properties['density'] * self.gravity * (elevation_i - elevation_j)
                 Gmat[j, j] += g
-                b[j] += g * known_nodes[i_id]
+                b[j] += g * (known_nodes[i_id] + dp_hydro)
+
             # if both known: no equation required
         
         # The RHS vector b is already set up correctly from the known pressure terms
@@ -461,6 +473,8 @@ class NodalMatrixSolver:
             p_from = node_pressures[conn.from_node.id]
             p_to = node_pressures[conn.to_node.id]
             connection_flows[conn.component.id] = G_e[conn.component.id] * (p_from - p_to)
+            for node_id in node_pressures:
+                node_pressures[node_id] += outlet_pressure
         
         return connection_flows, node_pressures
     
@@ -545,10 +559,6 @@ class NodalMatrixSolver:
         n_nodes = len(node_ids)
         node_to_idx = {node_id: i for i, node_id in enumerate(node_ids)}
         
-        # Handle special case: only 2 nodes (source and sink)
-        if n_nodes == 2:
-            return self._solve_two_node_case(network, source_node_id, sink_node_id, Q_total, fluid_properties)
-        
         # Remove sink node from the system (reference pressure = 0)
         sink_idx = node_to_idx[sink_node_id]
         active_nodes = [i for i in range(n_nodes) if i != sink_idx]
@@ -580,49 +590,55 @@ class NodalMatrixSolver:
                 
                 edge_resistances[conn.component.id] = resistance
                 edge_conductances[conn.component.id] = conductance
-            
-            # Step 2: Build nodal conductance matrix A and RHS vector b
+
+            # Step 2: Build conductance matrix A · p = b with hydrostatic heads
             A = lil_matrix((n_active, n_active))
             b = np.zeros(n_active)
-            
-            # Build the conductance matrix
+
             for conn in network.connections:
-                from_idx = node_to_idx[conn.from_node.id]
-                to_idx = node_to_idx[conn.to_node.id]
-                conductance = edge_conductances[conn.component.id]
-                
-                # Handle connections between active nodes
-                if from_idx != sink_idx and to_idx != sink_idx:
-                    from_active = full_to_active[from_idx]
-                    to_active = full_to_active[to_idx]
-                    
-                    # Add conductance to diagonal terms
-                    A[from_active, from_active] += conductance
-                    A[to_active, to_active] += conductance
-                    
-                    # Subtract conductance from off-diagonal terms
-                    A[from_active, to_active] -= conductance
-                    A[to_active, from_active] -= conductance
-                
-                # Handle connections to sink node
-                elif from_idx != sink_idx and to_idx == sink_idx:
-                    # Connection from active node to sink
-                    from_active = full_to_active[from_idx]
-                    A[from_active, from_active] += conductance
-                    # No off-diagonal term since sink is eliminated
-                    
-                elif from_idx == sink_idx and to_idx != sink_idx:
-                    # Connection from sink to active node
-                    to_active = full_to_active[to_idx]
-                    A[to_active, to_active] += conductance
-                    # No off-diagonal term since sink is eliminated
-            
+                i_full = node_to_idx[conn.from_node.id]
+                j_full = node_to_idx[conn.to_node.id]
+                G = edge_conductances[conn.component.id]
+
+                # Elevations
+                z_i = conn.from_node.elevation
+                z_j = conn.to_node.elevation
+                # hydrostatic Δp = ρ g (z_j - z_i)
+                dp_hydro = fluid_properties['density'] * self.gravity * (z_j - z_i)
+
+                # Case A: both nodes unknown (active-active)
+                if i_full != sink_idx and j_full != sink_idx:
+                    i_act = full_to_active[i_full]
+                    j_act = full_to_active[j_full]
+
+                    # Conductance entries
+                    A[i_act, i_act] += G
+                    A[j_act, j_act] += G
+                    A[i_act, j_act] -= G
+                    A[j_act, i_act] -= G
+
+                    # RHS includes hydrostatic head
+                    b[i_act] += G * dp_hydro
+                    b[j_act] -= G * dp_hydro
+
+                # Case B: from active → sink
+                elif i_full != sink_idx and j_full == sink_idx:
+                    i_act = full_to_active[i_full]
+                    A[i_act, i_act] += G
+                    b[i_act] += G * dp_hydro
+
+                # Case C: from sink → active
+                elif i_full == sink_idx and j_full != sink_idx:
+                    j_act = full_to_active[j_full]
+                    A[j_act, j_act] += G
+                    b[j_act] -= G * dp_hydro
+
             # Step 3: Set up RHS vector (net flow injections)
             # Only the source node has a net flow injection
             source_idx = node_to_idx[source_node_id]
             if source_idx != sink_idx:
                 source_active = full_to_active[source_idx]
-                b[source_active] = Q_total
+                b[source_active] += Q_total
             
             # Step 4: Solve linear system A·p = b
             if n_active == 1:
@@ -634,6 +650,7 @@ class NodalMatrixSolver:
             else:
                 try:
                     A_csr = A.tocsr()
+                    print("b vector:", b)
                     pressures_active = spsolve(A_csr, b)
                     if np.isscalar(pressures_active):
                         pressures_active = np.array([pressures_active])
@@ -642,6 +659,7 @@ class NodalMatrixSolver:
                     # Try with regularization
                     A_reg = A_csr + 1e-12 * lil_matrix(np.eye(n_active))
                     try:
+                        print("b vector:", b)
                         pressures_active = spsolve(A_reg.tocsr(), b)
                         if np.isscalar(pressures_active):
                             pressures_active = np.array([pressures_active])
@@ -709,92 +727,6 @@ class NodalMatrixSolver:
         self._validate_mass_conservation(network, new_edge_flows, source_node_id, sink_node_id, Q_total)
         
         return node_pressures, new_edge_flows
-    
-    def _solve_two_node_case(self, network: FlowNetwork, source_node_id: str, sink_node_id: str, 
-                           Q_total: float, fluid_properties: Dict) -> Tuple[Dict[str, float], Dict[str, float]]:
-        """Handle the special case of a network with only two nodes"""
-        # Find all connections between source and sink
-        connections = []
-        for conn in network.connections:
-            if ((conn.from_node.id == source_node_id and conn.to_node.id == sink_node_id) or
-                (conn.from_node.id == sink_node_id and conn.to_node.id == source_node_id)):
-                connections.append(conn)
-        
-        if not connections:
-            raise ValueError("No connections found between source and sink nodes")
-        
-        # For multiple parallel connections, we need to solve for flow distribution
-        if len(connections) == 1:
-            # Single connection case
-            conn = connections[0]
-            resistance = self._compute_resistance(conn.component, Q_total, fluid_properties)
-            pressure_drop = resistance * Q_total
-            
-            if conn.from_node.id == source_node_id:
-                flow = Q_total
-            else:
-                flow = -Q_total
-            
-            node_pressures = {
-                source_node_id: pressure_drop,
-                sink_node_id: 0.0
-            }
-            
-            edge_flows = {
-                conn.component.id: flow
-            }
-            
-            return node_pressures, edge_flows
-        
-        else:
-            # Multiple parallel connections - use iterative approach
-            # Initialize flows equally
-            edge_flows = {}
-            initial_flow = Q_total / len(connections)
-            for conn in connections:
-                edge_flows[conn.component.id] = initial_flow
-            
-            # Iterate to find correct flow distribution
-            for iteration in range(20):  # Max iterations
-                # Compute resistances at current flows
-                resistances = {}
-                conductances = {}
-                for conn in connections:
-                    flow = edge_flows[conn.component.id]
-                    resistance = self._compute_resistance(conn.component, flow, fluid_properties)
-                    resistances[conn.component.id] = resistance
-                    conductances[conn.component.id] = 1.0 / resistance
-                
-                # Total conductance
-                total_conductance = sum(conductances.values())
-                
-                # Pressure drop (same across all parallel paths)
-                # Using equivalent resistance: R_eq = 1 / sum(1/R_i)
-                R_equivalent = 1.0 / total_conductance
-                pressure_drop = R_equivalent * Q_total
-                
-                # Compute new flows based on pressure drop
-                new_edge_flows = {}
-                for conn in connections:
-                    conductance = conductances[conn.component.id]
-                    flow = conductance * pressure_drop
-                    new_edge_flows[conn.component.id] = flow
-                
-                # Check convergence
-                max_change = max(abs(new_edge_flows[conn.component.id] - edge_flows[conn.component.id])
-                               for conn in connections)
-                
-                if max_change < 1e-8:
-                    break
-                
-                edge_flows = new_edge_flows
-            
-            node_pressures = {
-                source_node_id: pressure_drop,
-                sink_node_id: 0.0
-            }
-            
-            return node_pressures, edge_flows
     
     def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_id: str, 
                          Q_total: float) -> Dict[str, float]:
