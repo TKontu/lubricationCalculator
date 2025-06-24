@@ -213,7 +213,7 @@ class NodalMatrixSolver:
         work_net.virtual_connection_ids = vids
         return work_net 
     
-    def solve_nodal_network_with_pump_physics(
+    def solve_nodal_network_with_pump_physicsOLDOLD(
         self,
         network: FlowNetwork,
         pump_flow_rate: float,
@@ -316,6 +316,46 @@ class NodalMatrixSolver:
         }
 
         return connection_flows, solution_info
+
+    def solve_nodal_network_with_pump_physics(
+        self,
+        network: FlowNetwork,
+        pump_flow_rate: float,
+        temperature: float,
+        pump_max_pressure: float = 1e6,
+        outlet_pressure: float = 101_325.0,
+        max_iterations: Optional[int] = None,
+        tolerance: Optional[float] = None
+    ) -> Tuple[Dict[str, float], Dict]:
+        """
+        Fixed‐Q solver: pins outlet pressure, enforces pump_flow_rate, and returns
+        the flows and the required inlet pressure.
+        """
+        # 1) Validate network
+        valid, errs = network.validate_network()
+        if not valid:
+            raise ValueError(f"Invalid network: {errs}")
+
+        # 2) Delegate to the existing fixed‐Q nodal solver
+        flows, sol = self.solve_nodal_network(
+            network=network,
+            total_flow_rate=pump_flow_rate,
+            temperature=temperature,
+            inlet_pressure=0.0,         # unused by this path
+            outlet_pressure=outlet_pressure,
+            max_iterations=max_iterations,
+            tolerance=tolerance
+        )
+
+        # 3) Build the info dict the tests expect
+        info = {
+            'actual_flow_rate':        sol['total_flow_rate'],
+            'required_inlet_pressure': sol['node_pressures'][network.inlet_node.id],
+            'fluid_properties':        sol['fluid_properties']
+        }
+
+        return flows, info
+
 
     def _calculate_component_resistance(
         self,
