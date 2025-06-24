@@ -62,6 +62,7 @@ class NozzleType(Enum):
     ROUNDED = "rounded"
     VENTURI = "venturi"
     FLOW_NOZZLE = "flow_nozzle"
+    STANDARD_ANGLE= "standard_angle"
 
 
 class FlowComponent:

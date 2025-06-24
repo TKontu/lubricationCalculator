@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from ..network.flow_network import FlowNetwork
 from ..network.node import Node
 from ..components.channel import Channel
-from ..components.nozzle import Nozzle, NozzleType
+from ..components.nozzle import Nozzle, NozzleType, StandardAngleSprayNozzle
 from ..components.connector import Connector, ConnectorType
 from .simulation_config import SimulationConfig
 
@@ -180,12 +180,23 @@ class NetworkConfigLoader:
                     name=comp_name
                 )
             elif comp_type == 'nozzle':
-                nozzle_type = NozzleType(comp_data.get('nozzle_type', 'sharp_edged'))
-                component = Nozzle(
-                    diameter=comp_data['diameter'],
-                    nozzle_type=nozzle_type,
-                    name=comp_name
-                )
+                nt = comp_data.get('nozzle_type', 'sharp_edged')
+                if nt == NozzleType.STANDARD_ANGLE.value:
+                    # expect a "size" field in inches (10,15,20,...)
+                    size = int(comp_data['size'])
+                    spray_angle = comp_data.get('spray_angle', 95.0)
+                    component = StandardAngleSprayNozzle(
+                        size=size,
+                        spray_angle=spray_angle,
+                        name=comp_name
+                    )
+                else:
+                    nozzle_type = NozzleType(nt)
+                    component = Nozzle(
+                        diameter=comp_data['diameter'],
+                        nozzle_type=nozzle_type,
+                        name=comp_name
+                    )
             elif comp_type == 'connector':
                 connector_type = ConnectorType(comp_data.get('connector_type', 't_junction'))
                 component = Connector(

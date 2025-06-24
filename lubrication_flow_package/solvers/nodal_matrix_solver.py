@@ -147,7 +147,9 @@ class NodalMatrixSolver:
                 cid: flow for cid, flow in edge_flows.items()
                 if cid not in work_net.virtual_connection_ids
             }
-            node_pressures.pop(sink_id, None)
+            # Only remove the sink pressure if it’s the virtual sink from a multi-outlet collapse
+            if len(outlet_nodes) > 1:
+                node_pressures.pop(sink_id, None)
 
             # 8. Build solution_info
             solution_info = {
@@ -178,7 +180,7 @@ class NodalMatrixSolver:
 
             return connection_flows, solution_info
 
-    def _prepare_multi_outlet_network(
+    def _prepare_multi_outlet_networkOLD(
         self,
         network: FlowNetwork,
         outlet_nodes: Dict[str, object]
@@ -212,7 +214,48 @@ class NodalMatrixSolver:
         work_net.outlet_nodes = [virtual_sink]
         work_net.virtual_connection_ids = vids
         return work_net 
-    
+
+    def _prepare_multi_outlet_network(
+        self,
+        network: FlowNetwork,
+        outlet_nodes: List[Node]
+    ) -> FlowNetwork:
+        """
+        Deep-copy the network and collapse multiple outlets into one virtual sink.
+        Tracks the IDs of zero-loss connectors in virtual_connection_ids.
+        """
+        work_net = copy.deepcopy(network)
+
+        # if only one outlet, nothing special needed
+        if len(outlet_nodes) == 1:
+            work_net.virtual_connection_ids = set()
+            return work_net
+
+        # 1) create a new sink node
+        virtual_sink = work_net.create_node(name="__multi_outlet_sink__", elevation=0.0)
+
+        # 2) zero-loss connector template
+        zero_loss = Connector(
+            connector_type=ConnectorType.STRAIGHT,
+            diameter=1.0,
+            loss_coefficient=0.0,
+            auto_calculate_k=False
+        )
+
+        # 3) attach each original outlet → virtual sink
+        vids = set()
+        for out in outlet_nodes:
+            conn = work_net.connect_components(out, virtual_sink, zero_loss)
+            # record the component.id of that zero‐loss link
+            vids.add(conn.component.id)
+
+        # 4) replace outlets list with just our virtual sink
+        work_net.outlet_nodes = [virtual_sink]
+        work_net.virtual_connection_ids = vids
+
+        return work_net
+
+
     def solve_nodal_network_with_pump_physicsOLDOLD(
         self,
         network: FlowNetwork,
