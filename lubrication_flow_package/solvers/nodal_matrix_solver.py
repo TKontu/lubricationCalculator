@@ -178,6 +178,8 @@ class NodalMatrixSolver:
             for nid in solution_info['node_pressures']:
                 solution_info['node_pressures'][nid] += outlet_pressure
 
+            solution_info['inlet_pressure'] = solution_info['node_pressures'][inlet_node.id]
+
             return connection_flows, solution_info
 
     def _prepare_multi_outlet_networkOLD(
@@ -393,7 +395,7 @@ class NodalMatrixSolver:
         # 3) Build the info dict the tests expect
         info = {
             'actual_flow_rate':        sol['total_flow_rate'],
-            'required_inlet_pressure': sol['node_pressures'][network.inlet_node.id],
+            'required_inlet_pressure': sol['inlet_pressure'],
             'fluid_properties':        sol['fluid_properties']
         }
 
@@ -492,10 +494,10 @@ class NodalMatrixSolver:
             
             for conn in network.connections:
                 flow = edge_flows[conn.component.id]
-                resistance = self._calculate_component_resistance(
+                resistance = self._compute_resistance(
                     conn.component,
-                    fluid_properties,
-                    flow
+                    flow,
+                    fluid_properties
                 )
                 conductance = 1.0 / resistance
                 
@@ -623,8 +625,12 @@ class NodalMatrixSolver:
                 self.logger.info(f"Converged after {iteration + 1} iterations")
                 break
             
-            # Update flows for next iteration
-            edge_flows = new_edge_flows.copy()
+            # Update flows for next iteration with relaxation
+            for conn_id in edge_flows:
+                edge_flows[conn_id] = (
+                    self.config.relaxation_factor * new_edge_flows[conn_id] +
+                    (1 - self.config.relaxation_factor) * edge_flows[conn_id]
+                )
         
         else:
             self.logger.warning(f"Did not converge after {max_iter} iterations")
@@ -641,18 +647,59 @@ class NodalMatrixSolver:
     
     def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_id: str, 
                          Q_total: float) -> Dict[str, float]:
-        """Initialize edge flows with a better guess than equal distribution"""
-        edge_flows = {}
+        """
+        Initialize edge flows using a BFS-based approach to distribute flow
+        from source to sink more intelligently than a simple equal split.
+        """
+        edge_flows = {conn.component.id: 0.0 for conn in network.connections}
         
-        # Simple initialization: distribute flow equally among all edges
+        # Data structures for BFS
+        q = [(source_node_id, Q_total)]  # Queue of (node, flow_rate)
+        visited_nodes = {source_node_id}
+        
+        # Track flow into each node to correctly propagate it
+        node_in_flow = {node_id: 0.0 for node_id in network.nodes}
+        node_in_flow[source_node_id] = Q_total
+
+        # BFS from source
+        head = 0
+        while head < len(q):
+            curr_node_id, in_flow = q[head]
+            head += 1
+
+            # Find outgoing connections
+            outgoing_conns = [
+                conn for conn in network.connections 
+                if conn.from_node.id == curr_node_id
+            ]
+            
+            if not outgoing_conns:
+                continue
+
+            # Distribute flow among outgoing connections
+            flow_per_conn = in_flow / len(outgoing_conns)
+            
+            for conn in outgoing_conns:
+                edge_flows[conn.component.id] = flow_per_conn
+                
+                # Add next node to queue if not visited
+                next_node_id = conn.to_node.id
+                if next_node_id not in visited_nodes:
+                    visited_nodes.add(next_node_id)
+                    q.append((next_node_id, flow_per_conn))
+                
+                # This is a simplification; for complex topologies, flow accumulates
+                node_in_flow[next_node_id] += flow_per_conn
+        
+        # Fallback for any components missed by BFS (e.g., reverse flow)
+        # A more robust solution would handle cycles and backflow
         n_edges = len(network.connections)
-        if n_edges == 0:
-            return edge_flows
-        
-        initial_flow = Q_total / n_edges
-        for conn in network.connections:
-            edge_flows[conn.component.id] = initial_flow
-        
+        if n_edges > 0:
+            initial_flow = Q_total / n_edges
+            for conn_id in edge_flows:
+                if edge_flows[conn_id] == 0.0:
+                    edge_flows[conn_id] = initial_flow
+
         return edge_flows
     
     def _compute_resistance(self, component, flow: float, fluid_properties: Dict) -> float:
