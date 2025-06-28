@@ -3,7 +3,7 @@
 ## High Priority / Next Steps
 
 - **Configurable metric units:**
-  - [ ] Implement configurable units, Bar for pressure, l/min for flow rate.
+  - [x] Implement configurable units, Bar for pressure, l/min for flow rate.
 
 ## Medium Priority
 

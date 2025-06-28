@@ -29,6 +29,10 @@ class SimulationConfig:
     
     # Output settings
     output_units: str = "metric"  # "metric" or "imperial"
+    input_pressure_unit: str = "Pa"
+    input_flow_rate_unit: str = "m3/s"
+    output_pressure_unit: str = "Pa"
+    output_flow_rate_unit: str = "m3/s"
     detailed_output: bool = True
     save_results: bool = False
     results_file: Optional[str] = None
@@ -55,6 +59,10 @@ class SimulationConfig:
             },
             'output_settings': {
                 'output_units': self.output_units,
+                'input_pressure_unit': self.input_pressure_unit,
+                'input_flow_rate_unit': self.input_flow_rate_unit,
+                'output_pressure_unit': self.output_pressure_unit,
+                'output_flow_rate_unit': self.output_flow_rate_unit,
                 'detailed_output': self.detailed_output,
                 'save_results': self.save_results,
                 'results_file': self.results_file
@@ -82,6 +90,10 @@ class SimulationConfig:
             tolerance=solver_settings.get('tolerance', 1e-6),
             relaxation_factor=solver_settings.get('relaxation_factor', 0.8),
             output_units=output_settings.get('output_units', 'metric'),
+            input_pressure_unit=output_settings.get('input_pressure_unit', 'Pa'),
+            input_flow_rate_unit=output_settings.get('input_flow_rate_unit', 'm3/s'),
+            output_pressure_unit=output_settings.get('output_pressure_unit', 'Pa'),
+            output_flow_rate_unit=output_settings.get('output_flow_rate_unit', 'm3/s'),
             detailed_output=output_settings.get('detailed_output', True),
             save_results=output_settings.get('save_results', False),
             results_file=output_settings.get('results_file')

@@ -609,9 +609,22 @@ class NodalMatrixSolver:
                 
 
     def print_results(self, network: FlowNetwork, connection_flows: Dict[str, float],
-                     solution_info: Dict):
+                     solution_info: Dict, pressure_unit: str = 'kPa', flow_rate_unit: str = 'L/s'):
         """Print detailed results in a structured and clear format."""
         
+        def convert_pressure(p_pa, unit):
+            if unit.lower() == 'bar':
+                return p_pa / 100000, 'bar'
+            return p_pa / 1000, 'kPa'
+
+        def convert_flow_rate(q_m3s, unit):
+            if unit.lower() == 'l/min':
+                return q_m3s * 60000, 'L/min'
+            return q_m3s * 1000, 'L/s'
+
+        p_unit_str = pressure_unit
+        q_unit_str = flow_rate_unit
+
         print(f"\n{'='*80}")
         print(f"NETWORK FLOW SIMULATION RESULTS")
         print(f"{'='*80}")
@@ -626,11 +639,13 @@ class NodalMatrixSolver:
         # --- Simulation Summary ---
         flow_rate_key = 'total_flow_rate' if 'total_flow_rate' in solution_info else 'actual_flow_rate'
         total_flow_rate = solution_info.get(flow_rate_key, 0.0)
-        print(f"\n  Total System Flow Rate: {total_flow_rate * 1000:.2f} L/s")
+        total_flow_rate_disp, q_unit_str = convert_flow_rate(total_flow_rate, flow_rate_unit)
+        print(f"\n  Total System Flow Rate: {total_flow_rate_disp:.2f} {q_unit_str}")
         
         inlet_pressure_key = 'inlet_pressure' if 'inlet_pressure' in solution_info else 'required_inlet_pressure'
         inlet_pressure = solution_info.get(inlet_pressure_key, 0.0)
-        print(f"  Inlet Pressure:         {inlet_pressure / 1000:.2f} kPa")
+        inlet_pressure_disp, p_unit_str = convert_pressure(inlet_pressure, pressure_unit)
+        print(f"  Inlet Pressure:         {inlet_pressure_disp:.2f} {p_unit_str}")
         
         converged = solution_info.get('converged', False)
         iterations = solution_info.get('iterations', 'N/A')
@@ -640,7 +655,7 @@ class NodalMatrixSolver:
         print(f"\n{'='*80}")
         print("OUTLET FLOW DISTRIBUTION")
         print(f"{'='*80}")
-        print(f"  {'Outlet Node':<25} {'Flow Rate (L/s)':<20} {'Percentage of Total':<25}")
+        print(f"  {'Outlet Node':<25} {'Flow Rate (' + q_unit_str + ')':<20} {'Percentage of Total':<25}")
         print(f"  {'-'*25} {'-'*20} {'-'*25}")
         
         outlet_nodes = network.outlet_nodes
@@ -652,11 +667,13 @@ class NodalMatrixSolver:
                 if conn.to_node.id == outlet_node.id:
                     flow = connection_flows.get(conn.component.id, 0.0)
                     total_outlet_flow += flow
+                    flow_disp, _ = convert_flow_rate(flow, flow_rate_unit)
                     percentage = (flow / total_flow_rate * 100) if total_flow_rate > 0 else 0
-                    print(f"  {outlet_node.name:<25} {flow * 1000:<20.3f} {percentage:>24.1f}%")
+                    print(f"  {outlet_node.name:<25} {flow_disp:<20.3f} {percentage:>24.1f}%")
         
+        total_outlet_flow_disp, _ = convert_flow_rate(total_outlet_flow, flow_rate_unit)
         print(f"  {'-'*25} {'-'*20} {'-'*25}")
-        print(f"  {'Total Outlet Flow':<25} {total_outlet_flow * 1000:<20.3f}")
+        print(f"  {'Total Outlet Flow':<25} {total_outlet_flow_disp:<20.3f}")
 
         # --- Pressure and Flow Details ---
         print(f"\n{'='*80}")
@@ -678,19 +695,21 @@ class NodalMatrixSolver:
                 solution_info['pressure_drops'][component.id] = dp
         
         # Print connection flows and pressure drops
-        print(f"  {'Component':<20} {'Type':<15} {'Flow Rate (L/s)':<20} {'Pressure Drop (kPa)':<20}")
+        print(f"  {'Component':<20} {'Type':<15} {'Flow Rate (' + q_unit_str + ')':<20} {'Pressure Drop (' + p_unit_str + ')':<20}")
         print(f"  {'-'*20} {'-'*15} {'-'*20} {'-'*20}")
         
         for connection in network.connections:
             component = connection.component
             flow_rate = connection_flows.get(component.id, 0.0)
             pressure_drop = solution_info['pressure_drops'].get(component.id, 0)
+            flow_rate_disp, _ = convert_flow_rate(flow_rate, flow_rate_unit)
+            pressure_drop_disp, _ = convert_pressure(pressure_drop, pressure_unit)
             
             print(f"  {component.name:<20} {component.component_type.value:<15} "
-                  f"{flow_rate * 1000:<20.3f} {pressure_drop / 1000:<20.2f}")
+                  f"{flow_rate_disp:<20.3f} {pressure_drop_disp:<20.2f}")
         
         # Print node pressures
-        print(f"\n  {'Node':<20} {'Pressure (kPa)':<20} {'Elevation (m)':<15}")
+        print(f"\n  {'Node':<20} {'Pressure (' + p_unit_str + ')':<20} {'Elevation (m)':<15}")
         print(f"  {'-'*20} {'-'*20} {'-'*15}")
         
         sorted_nodes = sorted(solution_info.get('node_pressures', {}).items(), key=lambda item: item[1], reverse=True)
@@ -698,7 +717,8 @@ class NodalMatrixSolver:
         for node_id, pressure in sorted_nodes:
             node = network.nodes.get(node_id)
             if node:
-                print(f"  {node.name:<20} {pressure / 1000:<20.2f} {node.elevation:<15.1f}")
+                pressure_disp, _ = convert_pressure(pressure, pressure_unit)
+                print(f"  {node.name:<20} {pressure_disp:<20.2f} {node.elevation:<15.1f}")
         
         # --- Warnings ---
         if 'warnings' in solution_info and solution_info['warnings']:

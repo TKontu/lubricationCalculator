@@ -237,7 +237,9 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
         return False
     
     # Print results
-    solver.print_results(network, connection_flows, solution_info)
+    solver.print_results(network, connection_flows, solution_info,
+                         pressure_unit=sim_config.output_pressure_unit,
+                         flow_rate_unit=sim_config.output_flow_rate_unit)
     
     # Analyze system adequacy
     if hasattr(solver, 'analyze_system_adequacy'):

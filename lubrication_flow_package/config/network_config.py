@@ -146,6 +146,22 @@ class NetworkConfigLoader:
         )
     
     @staticmethod
+    def _convert_pressure_to_pa(pressure: float, unit: str) -> float:
+        if unit.lower() == 'bar':
+            return pressure * 100000
+        elif unit.lower() == 'kpa':
+            return pressure * 1000
+        return pressure
+
+    @staticmethod
+    def _convert_flow_rate_to_m3s(flow_rate: float, unit: str) -> float:
+        if unit.lower() == 'l/min':
+            return flow_rate / 60000
+        elif unit.lower() == 'l/s':
+            return flow_rate / 1000
+        return flow_rate
+
+    @staticmethod
     def build_network(config: NetworkConfig) -> tuple[FlowNetwork, SimulationConfig]:
         """Build FlowNetwork and SimulationConfig from NetworkConfig"""
         network = FlowNetwork(config.network_name)
@@ -218,9 +234,19 @@ class NetworkConfigLoader:
             
             network.connect_components(from_node, to_node, component)
         
-        # Create simulation config
+        # Create simulation config and convert units
         sim_config = SimulationConfig.from_dict(config.simulation)
-        
+        sim_config.total_flow_rate = NetworkConfigLoader._convert_flow_rate_to_m3s(
+            sim_config.total_flow_rate, sim_config.input_flow_rate_unit
+        )
+        sim_config.inlet_pressure = NetworkConfigLoader._convert_pressure_to_pa(
+            sim_config.inlet_pressure, sim_config.input_pressure_unit
+        )
+        if sim_config.outlet_pressure is not None:
+            sim_config.outlet_pressure = NetworkConfigLoader._convert_pressure_to_pa(
+                sim_config.outlet_pressure, sim_config.input_pressure_unit
+            )
+            
         return network, sim_config
 
 
