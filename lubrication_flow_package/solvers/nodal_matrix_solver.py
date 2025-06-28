@@ -182,109 +182,7 @@ class NodalMatrixSolver:
     
 
 
-    def solve_nodal_network_with_pump_physicsOLDOLD(
-        self,
-        network: FlowNetwork,
-        pump_flow_rate: float,
-        temperature: float,
-        pump_max_pressure: float = 1e6,
-        outlet_pressure: float = 101325.0,
-        max_iterations: Optional[int] = None,
-        tolerance: Optional[float] = None
-    ) -> Tuple[Dict[str, float], Dict]:
-        """
-        Fixed‐Q solver with full non‐linear convergence at each pressure guess.
-        """
-        # 1) Validate network
-        is_valid, errors = network.validate_network()
-        if not is_valid:
-            raise ValueError(f"Invalid network: {errors}")
-
-        # 2) Solver parameters
-        inner_max = (max_iterations or self.config.max_iterations)
-        tol = (tolerance or self.config.tolerance)
-        q_tol = tol * pump_flow_rate
-
-        # 3) Fluid properties
-        viscosity = self.calculate_viscosity(temperature)
-        fluid_props = {'density': self.oil_density, 'viscosity': viscosity}
-
-        # 4) Identify inlet/sink
-        inlet = network.inlet_node
-        sinks = network.outlet_nodes or []
-        if inlet is None or not sinks:
-            raise ValueError("Network must have one inlet and at least one outlet")
-        # collapse multi‐outlet into a single virtual sink
-        work_net = self._prepare_multi_outlet_network(network, sinks)
-        source_id = inlet.id
-        sink_id   = work_net.outlet_nodes[0].id
-
-        # 5) Pressure bracket
-        p_lo, p_hi = outlet_pressure, pump_max_pressure
-        converged = False
-
-        for iteration in range(inner_max):
-            p_guess = 0.5 * (p_lo + p_hi)
-
-            # --- call the full non‐linear iterative solver at this inlet head ---
-            node_p, edge_Q = self.solve_nodal_iterative(
-                network=work_net,
-                source_node_id=source_id,
-                sink_node_id=sink_id,
-                Q_total=pump_flow_rate,
-                fluid_properties=fluid_props,
-                tol_flow=tol * 1e-3,
-                tol_pressure=tol * 1e3,
-                max_iter=inner_max
-            )
-
-            # compute delivered flow out of the (virtual) source
-            Q_delivered = sum(
-                edge_Q[conn.component.id]
-                for conn in work_net.adjacency_list[source_id]
-            )
-
-            # check convergence
-            if abs(Q_delivered - pump_flow_rate) < q_tol:
-                converged = True
-                break
-
-            # narrow bracket
-            if Q_delivered > pump_flow_rate:
-                # network too “easy”
-                p_hi = p_guess
-            else:
-                # network too “hard”
-                p_lo = p_guess
-
-        # 6) Build solution_info
-        # shift pressures to absolute reference
-        for nid in node_p:
-            node_p[nid] += outlet_pressure
-
-        solution_info = {
-            'required_inlet_pressure': p_guess,
-            'actual_flow_rate':        Q_delivered,
-            'converged':               converged,
-            'iterations':              iteration + 1,
-            'node_pressures':          node_p,
-            'pressure_drops': {
-                conn.component.id: conn.component.calculate_pressure_drop(
-                    edge_Q.get(conn.component.id, 0.0),
-                    fluid_props
-                )
-                for conn in network.connections
-            },
-            'fluid_properties': fluid_props
-        }
-
-        # filter out any virtual connections
-        connection_flows = {
-            cid: q for cid, q in edge_Q.items()
-            if cid not in getattr(work_net, 'virtual_connection_ids', ())
-        }
-
-        return connection_flows, solution_info
+    
 
     def solve_nodal_network_with_pump_physics(
         self,
@@ -512,10 +410,27 @@ class NodalMatrixSolver:
                 new_edge_flows[conn.component.id] = flow
             
             # Step 7: Check convergence
-            max_flow_change = max(abs(new_edge_flows[conn_id] - edge_flows[conn_id]) 
+            max_flow_change = max(abs(new_edge_flows[conn_id] - edge_flows[conn_id])
                                 for conn_id in edge_flows)
-            
-            if max_flow_change < tol_flow:
+
+            max_pressure_error = 0.0
+            for conn in network.connections:
+                from_idx = node_to_idx[conn.from_node.id]
+                to_idx = node_to_idx[conn.to_node.id]
+
+                pressure_diff = pressures_full[from_idx] - pressures_full[to_idx]
+                flow = new_edge_flows[conn.component.id]
+                resistance = edge_resistances[conn.component.id]
+
+                expected_pressure_drop = resistance * flow
+                pressure_error = abs(pressure_diff - expected_pressure_drop)
+                max_pressure_error = max(max_pressure_error, pressure_error)
+
+            self.logger.debug(f"Iteration {iteration + 1}: max_flow_change={max_flow_change:.2e}, "
+                            f"max_pressure_error={max_pressure_error:.2e}")
+
+            # Check convergence criteria
+            if max_flow_change < tol_flow and max_pressure_error < tol_pressure:
                 self.logger.info(f"Converged after {iteration + 1} iterations")
                 break
             
