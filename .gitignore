@@ -26,3 +26,4 @@ lubrication_flow_package/utils/__pycache__/__init__.cpython-313.pyc
 lubrication_flow_package/utils/__pycache__/network_utils.cpython-313.pyc
 tests/__pycache__/__init__.cpython-313.pyc
 tests/__pycache__/test_hydraulics.cpython-313-pytest-8.3.5.pyc
+.env

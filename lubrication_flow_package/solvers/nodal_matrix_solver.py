@@ -134,16 +134,11 @@ class NodalMatrixSolver:
             if not outlet_nodes:
                 raise ValueError("Network must have at least one outlet node")
 
-            # 5. Wrap multi-outlet into single virtual sink
-            work_net = self._prepare_multi_outlet_network(network, outlet_nodes)
-            source_id = inlet_node.id
-            sink_id   = work_net.outlet_nodes[0].id
-
-            # 6. Call iterative solver
+            # 5. Call iterative solver
             node_pressures, edge_flows = self.solve_nodal_iterative(
-                network=work_net,
-                source_node_id=source_id,
-                sink_node_id=sink_id,
+                network=network,
+                source_node_id=inlet_node.id,
+                sink_node_ids=[o.id for o in outlet_nodes],
                 Q_total=total_flow_rate,
                 fluid_properties=fluid_properties,
                 tol_flow=tol * 1e-3,
@@ -151,16 +146,7 @@ class NodalMatrixSolver:
                 max_iter=max_iter
             )
 
-            # 7. Filter out the virtual connectors
-            connection_flows = {
-                cid: flow for cid, flow in edge_flows.items()
-                if cid not in work_net.virtual_connection_ids
-            }
-            # Only remove the sink pressure if it’s the virtual sink from a multi-outlet collapse
-            if len(outlet_nodes) > 1:
-                node_pressures.pop(sink_id, None)
-
-            # 8. Build solution_info
+            # 6. Build solution_info
             solution_info = {
                 'converged':    True,
                 'iterations':   max_iter,      # ideally updated by solver
@@ -176,95 +162,24 @@ class NodalMatrixSolver:
                 'fluid_properties': fluid_properties
             }
 
-            # 9. Compute pressure drops per connection
+            # 7. Compute pressure drops per connection
             for conn in network.connections:
                 comp = conn.component
-                q    = connection_flows.get(comp.id, 0.0)
+                q    = edge_flows.get(comp.id, 0.0)
                 dp   = comp.calculate_pressure_drop(q, fluid_properties)
                 solution_info['pressure_drops'][comp.id] = dp
 
-            # 10. Shift all computed node pressures by outlet_pressure reference
+            # 8. Shift all computed node pressures by outlet_pressure reference
             for nid in solution_info['node_pressures']:
                 solution_info['node_pressures'][nid] += outlet_pressure
 
             solution_info['inlet_pressure'] = solution_info['node_pressures'][inlet_node.id]
 
-            return connection_flows, solution_info
+            return edge_flows, solution_info
 
-    def _prepare_multi_outlet_networkOLD(
-        self,
-        network: FlowNetwork,
-        outlet_nodes: Dict[str, object]
-    ) -> FlowNetwork:
-        """
-        Deep-copy the network and collapse multiple outlets into one virtual sink.
-        Tracks the IDs of zero-loss connectors in virtual_connection_ids.
-        """
-        work_net = copy.deepcopy(network)
-        # if only one outlet, just record empty set
-        if len(outlet_nodes) == 1:
-            work_net.virtual_connection_ids = set()
-            return work_net
+     
 
-        # create virtual sink
-        virtual_sink = work_net.add_node(name="__multi_outlet_sink__")
-
-        # prepare zero-loss connector template
-        zero_loss = Connector(
-            connector_type=ConnectorType.STRAIGHT,
-            diameter=1.0,
-            loss_coefficient=0.0,
-            auto_calculate_k=False
-        )
-
-        vids = set()
-        for out in outlet_nodes:
-            conn = work_net.connect_components(out, virtual_sink, zero_loss)
-            vids.add(conn.id)
-
-        work_net.outlet_nodes = [virtual_sink]
-        work_net.virtual_connection_ids = vids
-        return work_net 
-
-    def _prepare_multi_outlet_network(
-        self,
-        network: FlowNetwork,
-        outlet_nodes: List[Node]
-    ) -> FlowNetwork:
-        """
-        Deep-copy the network and collapse multiple outlets into one virtual sink.
-        Tracks the IDs of zero-loss connectors in virtual_connection_ids.
-        """
-        work_net = copy.deepcopy(network)
-
-        # if only one outlet, nothing special needed
-        if len(outlet_nodes) == 1:
-            work_net.virtual_connection_ids = set()
-            return work_net
-
-        # 1) create a new sink node
-        virtual_sink = work_net.create_node(name="__multi_outlet_sink__", elevation=0.0)
-
-        # 2) zero-loss connector template
-        zero_loss = Connector(
-            connector_type=ConnectorType.STRAIGHT,
-            diameter=1.0,
-            loss_coefficient=0.0,
-            auto_calculate_k=False
-        )
-
-        # 3) attach each original outlet → virtual sink
-        vids = set()
-        for out in outlet_nodes:
-            conn = work_net.connect_components(out, virtual_sink, zero_loss)
-            # record the component.id of that zero‐loss link
-            vids.add(conn.component.id)
-
-        # 4) replace outlets list with just our virtual sink
-        work_net.outlet_nodes = [virtual_sink]
-        work_net.virtual_connection_ids = vids
-
-        return work_net
+    
 
 
     def solve_nodal_network_with_pump_physicsOLDOLD(
@@ -439,10 +354,10 @@ class NodalMatrixSolver:
         # floor
         return max(R, self.config.min_resistance)
     
-    def solve_nodal_iterative(self, 
+    def solve_nodal_iterative(self,
                              network: FlowNetwork,
                              source_node_id: str,
-                             sink_node_id: str,
+                             sink_node_ids: List[str],
                              Q_total: float,
                              fluid_properties: Dict,
                              tol_flow: float = 1e-6,
@@ -454,7 +369,7 @@ class NodalMatrixSolver:
         Args:
             network: FlowNetwork to solve
             source_node_id: ID of the source node where flow enters
-            sink_node_id: ID of the sink node where flow exits (reference pressure = 0)
+            sink_node_ids: List of IDs of the sink nodes where flow exits
             Q_total: Total flow rate entering at source and exiting at sink (m³/s)
             fluid_properties: Dict with 'density' and 'viscosity' keys
             tol_flow: Convergence tolerance for flow rates (m³/s)
@@ -469,9 +384,10 @@ class NodalMatrixSolver:
         # Validate inputs
         if source_node_id not in network.nodes:
             raise ValueError(f"Source node {source_node_id} not found in network")
-        if sink_node_id not in network.nodes:
-            raise ValueError(f"Sink node {sink_node_id} not found in network")
-        if source_node_id == sink_node_id:
+        for sink_node_id in sink_node_ids:
+            if sink_node_id not in network.nodes:
+                raise ValueError(f"Sink node {sink_node_id} not found in network")
+        if source_node_id in sink_node_ids:
             raise ValueError("Source and sink nodes must be different")
         
         # Get node list and create mapping
@@ -479,25 +395,28 @@ class NodalMatrixSolver:
         n_nodes = len(node_ids)
         node_to_idx = {node_id: i for i, node_id in enumerate(node_ids)}
         
-        # Remove sink node from the system (reference pressure = 0)
-        sink_idx = node_to_idx[sink_node_id]
-        active_nodes = [i for i in range(n_nodes) if i != sink_idx]
+        # Remove sink nodes from the system (reference pressure = 0)
+        sink_indices = [node_to_idx[sink_id] for sink_id in sink_node_ids]
+        active_nodes = [i for i in range(n_nodes) if i not in sink_indices]
         n_active = len(active_nodes)
         
         if n_active == 0:
-            raise ValueError("No active nodes after removing sink node")
+            raise ValueError("No active nodes after removing sink nodes")
         
         # Create mapping for active nodes
         active_to_full = {i: active_nodes[i] for i in range(n_active)}
         full_to_active = {active_nodes[i]: i for i in range(n_active)}
         
-        # Initialize edge flows with better initial guess
-        edge_flows = self._initialize_flows(network, source_node_id, sink_node_id, Q_total)
+        # Initialize edge flows
+        edge_flows = self._initialize_flows(network, source_node_id, sink_node_ids[0], Q_total)
         
         self.logger.info(f"Starting nodal-matrix solver with {n_nodes} nodes, {len(network.connections)} edges")
-        self.logger.info(f"Source: {source_node_id}, Sink: {sink_node_id}, Q_total: {Q_total:.6f} m³/s")
+        self.logger.info(f"Source: {source_node_id}, Sinks: {sink_node_ids}, Q_total: {Q_total:.6f} m³/s")
         
         # Iterative solution
+        relaxation_factor = self.config.relaxation_factor
+        last_max_flow_change = float('inf')
+
         for iteration in range(max_iter):
             # Step 1: Compute resistances and conductances from current flows
             edge_resistances = {}
@@ -530,43 +449,35 @@ class NodalMatrixSolver:
                 # hydrostatic Δp = ρ g (z_j - z_i)
                 dp_hydro = fluid_properties['density'] * self.gravity * (z_j - z_i)
 
-                # Case A: both nodes unknown (active-active)
-                if i_full != sink_idx and j_full != sink_idx:
+                i_is_active = i_full not in sink_indices
+                j_is_active = j_full not in sink_indices
+
+                if i_is_active and j_is_active:
                     i_act = full_to_active[i_full]
                     j_act = full_to_active[j_full]
-
-                    # Conductance entries
                     A[i_act, i_act] += G
                     A[j_act, j_act] += G
                     A[i_act, j_act] -= G
                     A[j_act, i_act] -= G
-
-                    # RHS includes hydrostatic head
                     b[i_act] += G * dp_hydro
                     b[j_act] -= G * dp_hydro
-
-                # Case B: from active → sink
-                elif i_full != sink_idx and j_full == sink_idx:
+                elif i_is_active and not j_is_active:
                     i_act = full_to_active[i_full]
                     A[i_act, i_act] += G
                     b[i_act] += G * dp_hydro
-
-                # Case C: from sink → active
-                elif i_full == sink_idx and j_full != sink_idx:
+                elif not i_is_active and j_is_active:
                     j_act = full_to_active[j_full]
                     A[j_act, j_act] += G
                     b[j_act] -= G * dp_hydro
 
             # Step 3: Set up RHS vector (net flow injections)
-            # Only the source node has a net flow injection
             source_idx = node_to_idx[source_node_id]
-            if source_idx != sink_idx:
+            if source_idx not in sink_indices:
                 source_active = full_to_active[source_idx]
                 b[source_active] += Q_total
             
             # Step 4: Solve linear system A·p = b
             if n_active == 1:
-                # Special case: only one active node
                 if A[0, 0] > 0:
                     pressures_active = np.array([b[0] / A[0, 0]])
                 else:
@@ -574,28 +485,18 @@ class NodalMatrixSolver:
             else:
                 try:
                     A_csr = A.tocsr()
-                    #print("b vector:", b)
                     pressures_active = spsolve(A_csr, b)
                     if np.isscalar(pressures_active):
                         pressures_active = np.array([pressures_active])
                 except Exception as e:
                     self.logger.error(f"Failed to solve linear system at iteration {iteration}: {e}")
-                    # Try with regularization
-                    A_reg = A_csr + 1e-12 * lil_matrix(np.eye(n_active))
-                    try:
-                        print("b vector:", b)
-                        pressures_active = spsolve(A_reg.tocsr(), b)
-                        if np.isscalar(pressures_active):
-                            pressures_active = np.array([pressures_active])
-                    except Exception as e2:
-                        raise RuntimeError(f"Failed to solve even with regularization: {e2}")
+                    raise RuntimeError(f"Failed to solve linear system: {e}")
             
             # Step 5: Reconstruct full pressure vector
             pressures_full = np.zeros(n_nodes)
             for i, pressure in enumerate(pressures_active):
                 full_idx = active_to_full[i]
                 pressures_full[full_idx] = pressure
-            # Sink pressure is already 0
             
             # Step 6: Compute new edge flows from pressures
             new_edge_flows = {}
@@ -607,7 +508,6 @@ class NodalMatrixSolver:
                 pressure_from = pressures_full[from_idx]
                 pressure_to = pressures_full[to_idx]
                 
-                # Flow = conductance * (pressure_from - pressure_to)
                 flow = conductance * (pressure_from - pressure_to)
                 new_edge_flows[conn.component.id] = flow
             
@@ -615,123 +515,107 @@ class NodalMatrixSolver:
             max_flow_change = max(abs(new_edge_flows[conn_id] - edge_flows[conn_id]) 
                                 for conn_id in edge_flows)
             
-            max_pressure_error = 0.0
-            for conn in network.connections:
-                from_idx = node_to_idx[conn.from_node.id]
-                to_idx = node_to_idx[conn.to_node.id]
-                
-                pressure_diff = pressures_full[from_idx] - pressures_full[to_idx]
-                flow = new_edge_flows[conn.component.id]
-                resistance = edge_resistances[conn.component.id]
-                
-                expected_pressure_drop = resistance * flow
-                pressure_error = abs(pressure_diff - expected_pressure_drop)
-                max_pressure_error = max(max_pressure_error, pressure_error)
-            
-            self.logger.debug(f"Iteration {iteration + 1}: max_flow_change={max_flow_change:.2e}, "
-                            f"max_pressure_error={max_pressure_error:.2e}")
-            
-            # Check convergence criteria
-            if max_flow_change < tol_flow and max_pressure_error < tol_pressure:
+            if max_flow_change < tol_flow:
                 self.logger.info(f"Converged after {iteration + 1} iterations")
                 break
             
             # Update flows for next iteration with relaxation
             for conn_id in edge_flows:
                 edge_flows[conn_id] = (
-                    self.config.relaxation_factor * new_edge_flows[conn_id] +
-                    (1 - self.config.relaxation_factor) * edge_flows[conn_id]
+                    relaxation_factor * new_edge_flows[conn_id] +
+                    (1 - relaxation_factor) * edge_flows[conn_id]
                 )
         
         else:
             self.logger.warning(f"Did not converge after {max_iter} iterations")
         
         # Prepare output
-        node_pressures = {}
-        for i, node_id in enumerate(node_ids):
-            node_pressures[node_id] = pressures_full[i]
+        node_pressures = {node_id: pressures_full[node_to_idx[node_id]] for node_id in node_ids}
         
-        # Validate mass conservation
-        self._validate_mass_conservation(network, new_edge_flows, source_node_id, sink_node_id, Q_total)
+        self._validate_mass_conservation(network, new_edge_flows, source_node_id, sink_node_ids, Q_total)
         
         return node_pressures, new_edge_flows
     
-    def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_id: str, 
-                         Q_total: float) -> Dict[str, float]:
+    def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_id: str,
+                          Q_total: float) -> Dict[str, float]:
         """
-        Initialize edge flows using a BFS-based approach to distribute flow
-        from source to sink more intelligently than a simple equal split.
+        Initialize edge flows using a resistance-based approach for a better guess.
+        Flow is distributed inversely proportional to the resistance of the path.
         """
         edge_flows = {conn.component.id: 0.0 for conn in network.connections}
-        
-        # Data structures for BFS
-        q = [(source_node_id, Q_total)]  # Queue of (node, flow_rate)
-        visited_nodes = {source_node_id}
-        
-        # Track flow into each node to correctly propagate it
-        node_in_flow = {node_id: 0.0 for node_id in network.nodes}
-        node_in_flow[source_node_id] = Q_total
+        fluid_properties = {
+            'density': self.oil_density,
+            'viscosity': self.calculate_viscosity(40.0)  # Assume 40C for initial viscosity
+        }
 
-        # BFS from source
-        head = 0
-        while head < len(q):
-            curr_node_id, in_flow = q[head]
-            head += 1
+        # Estimate resistance for each component with a small flow
+        resistances = {}
+        for conn in network.connections:
+            resistances[conn.component.id] = self._compute_resistance(
+                conn.component, self.config.dq_absolute, fluid_properties
+            )
 
-            # Find outgoing connections
-            outgoing_conns = [
-                conn for conn in network.connections 
-                if conn.from_node.id == curr_node_id
-            ]
-            
-            if not outgoing_conns:
+        # Find all paths from source to sink using BFS
+        paths = []
+        queue = [(source_node_id, [])]
+        visited = {source_node_id}
+
+        while queue:
+            curr_node_id, path = queue.pop(0)
+
+            if curr_node_id == sink_node_id:
+                paths.append(path)
                 continue
 
-            # Distribute flow among outgoing connections
-            flow_per_conn = in_flow / len(outgoing_conns)
-            
-            for conn in outgoing_conns:
-                edge_flows[conn.component.id] = flow_per_conn
-                
-                # Add next node to queue if not visited
-                next_node_id = conn.to_node.id
-                if next_node_id not in visited_nodes:
-                    visited_nodes.add(next_node_id)
-                    q.append((next_node_id, flow_per_conn))
-                
-                # This is a simplification; for complex topologies, flow accumulates
-                node_in_flow[next_node_id] += flow_per_conn
-        
-        # Fallback for any components missed by BFS (e.g., reverse flow)
-        # A more robust solution would handle cycles and backflow
-        n_edges = len(network.connections)
-        if n_edges > 0:
-            initial_flow = Q_total / n_edges
-            for conn_id in edge_flows:
-                if edge_flows[conn_id] == 0.0:
+            for conn in network.connections:
+                if conn.from_node.id == curr_node_id and conn.to_node.id not in visited:
+                    new_path = path + [conn.component.id]
+                    visited.add(conn.to_node.id)
+                    queue.append((conn.to_node.id, new_path))
+
+        if not paths:
+            # Fallback to simple distribution if no paths are found
+            n_edges = len(network.connections)
+            if n_edges > 0:
+                initial_flow = Q_total / n_edges
+                for conn_id in edge_flows:
                     edge_flows[conn_id] = initial_flow
+            return edge_flows
+
+        # Calculate total resistance for each path
+        path_resistances = []
+        for path in paths:
+            path_resistance = sum(resistances[comp_id] for comp_id in path)
+            path_resistances.append(path_resistance)
+
+        # Distribute flow based on inverse of path resistance
+        total_inverse_resistance = sum(1.0 / r for r in path_resistances if r > 0)
+
+        for i, path in enumerate(paths):
+            path_resistance = path_resistances[i]
+            if path_resistance > 0:
+                path_flow = Q_total * (1.0 / path_resistance) / total_inverse_resistance
+                for comp_id in path:
+                    edge_flows[comp_id] += path_flow
 
         return edge_flows
     
     def _compute_resistance(self, component, flow: float, fluid_properties: Dict) -> float:
         """Compute resistance for a component at given flow rate"""
-        if abs(flow) > 1e-12:
-            pressure_drop = component.calculate_pressure_drop(abs(flow), fluid_properties)
-            resistance = pressure_drop / abs(flow)
-        else:
-            # For zero flow, estimate resistance at small flow
-            small_flow = self.config.dq_absolute
-            pressure_drop = component.calculate_pressure_drop(small_flow, fluid_properties)
-            resistance = pressure_drop / small_flow
+        # Use a small, non-zero flow for resistance calculation if flow is close to zero
+        calc_flow = abs(flow) if abs(flow) > self.config.dq_absolute else self.config.dq_absolute
+        
+        pressure_drop = component.calculate_pressure_drop(calc_flow, fluid_properties)
+        resistance = pressure_drop / calc_flow
         
         # Ensure minimum resistance to avoid numerical issues
         return max(resistance, self.config.min_resistance)
     
-    def _validate_mass_conservation(self, 
+    def _validate_mass_conservation(self,
                                    network: FlowNetwork,
                                    edge_flows: Dict[str, float],
                                    source_node_id: str,
-                                   sink_node_id: str,
+                                   sink_node_ids: List[str],
                                    Q_total: float,
                                    tolerance: float = 1e-6):
         """
@@ -741,66 +625,111 @@ class NodalMatrixSolver:
             network: The flow network
             edge_flows: Dictionary of edge flows
             source_node_id: Source node ID
-            sink_node_id: Sink node ID  
+            sink_node_ids: List of sink node IDs
             Q_total: Total flow rate
             tolerance: Tolerance for mass conservation check
         """
+        total_sink_flow = 0
         for node_id, node in network.nodes.items():
             flow_in = 0.0
             flow_out = 0.0
             
             # Sum flows into and out of this node
             for conn in network.connections:
-                flow = edge_flows[conn.component.id]
+                flow = edge_flows.get(conn.component.id, 0.0)
                 
                 if conn.to_node.id == node_id:
                     flow_in += flow
                 elif conn.from_node.id == node_id:
                     flow_out += flow
             
+            if node_id in sink_node_ids:
+                total_sink_flow += flow_in
+            
             # Net flow at node
             net_flow = flow_in - flow_out
             
             # Expected net flow
             if node_id == source_node_id:
-                expected_net = -Q_total  # Flow leaves source
-            elif node_id == sink_node_id:
-                expected_net = Q_total   # Flow enters sink
+                expected_net = -Q_total
+            elif node_id in sink_node_ids:
+                # For sink nodes, we don't know the exact flow, so we check the total sink flow later
+                continue
             else:
-                expected_net = 0.0       # No net flow at intermediate nodes
+                expected_net = 0.0
             
             error = abs(net_flow - expected_net)
             if error > tolerance:
-                self.logger.warning(f"Mass conservation violated at node {node_id}: "
-                                  f"net_flow={net_flow:.6f}, expected={expected_net:.6f}, "
-                                  f"error={error:.6f}")
+                self.logger.warning(f"Mass conservation violated at node {node.name} ({node_id}):\n"
+                                  f"  Flow in: {flow_in:.6f}\n"
+                                  f"  Flow out: {flow_out:.6f}\n"
+                                  f"  Net flow: {net_flow:.6f}\n"
+                                  f"  Expected net flow: {expected_net:.6f}\n"
+                                  f"  Error: {error:.6f}")
+
+        # Check total sink flow
+        error = abs(total_sink_flow - Q_total)
+        if error > tolerance:
+            self.logger.warning(f"Total sink flow does not match total source flow:\n"
+                              f"  Total sink flow: {total_sink_flow:.6f}\n"
+                              f"  Total source flow: {Q_total:.6f}\n"
+                              f"  Error: {error:.6f}")
                 
 
     def print_results(self, network: FlowNetwork, connection_flows: Dict[str, float],
                      solution_info: Dict):
-        """Print detailed results"""
-        print(f"\n{'='*70}")
-        print("NETWORK FLOW DISTRIBUTION RESULTS")
-        print(f"{'='*70}")
+        """Print detailed results in a structured and clear format."""
         
-        print(f"Network: {network.name}")
-        print(f"Temperature: {solution_info['temperature']:.1f}°C")
-        print(f"Oil Type: {self.oil_type}")
-        print(f"Oil Density: {self.oil_density:.1f} kg/m³")
-        print(f"Dynamic Viscosity: {solution_info['viscosity']:.6f} Pa·s")
+        print(f"\n{'='*80}")
+        print(f"NETWORK FLOW SIMULATION RESULTS")
+        print(f"{'='*80}")
         
-        # Handle different flow rate keys for backward compatibility
+        # --- General Information ---
+        print(f"  Network Name:      {network.name}")
+        print(f"  Temperature:       {solution_info.get('temperature', 'N/A'):.1f}°C")
+        print(f"  Oil Type:          {self.oil_type}")
+        print(f"  Oil Density:       {self.oil_density:.1f} kg/m³")
+        print(f"  Dynamic Viscosity: {solution_info.get('viscosity', 'N/A'):.6f} Pa·s")
+        
+        # --- Simulation Summary ---
         flow_rate_key = 'total_flow_rate' if 'total_flow_rate' in solution_info else 'actual_flow_rate'
-        if flow_rate_key in solution_info:
-            print(f"Total Flow Rate: {solution_info[flow_rate_key]*1000:.1f} L/s")
+        total_flow_rate = solution_info.get(flow_rate_key, 0.0)
+        print(f"\n  Total System Flow Rate: {total_flow_rate * 1000:.2f} L/s")
         
-        print(f"Converged: {solution_info['converged']} (in {solution_info['iterations']} iterations)")
+        inlet_pressure_key = 'inlet_pressure' if 'inlet_pressure' in solution_info else 'required_inlet_pressure'
+        inlet_pressure = solution_info.get(inlet_pressure_key, 0.0)
+        print(f"  Inlet Pressure:         {inlet_pressure / 1000:.2f} kPa")
         
-        # Handle different pressure keys
-        if 'inlet_pressure' in solution_info:
-            print(f"Inlet Pressure: {solution_info['inlet_pressure']/1000:.1f} kPa")
-        elif 'required_inlet_pressure' in solution_info:
-            print(f"Required Inlet Pressure: {solution_info['required_inlet_pressure']/1000:.1f} kPa")
+        converged = solution_info.get('converged', False)
+        iterations = solution_info.get('iterations', 'N/A')
+        print(f"  Solver Converged:       {'Yes' if converged else 'No'} (in {iterations} iterations)")
+        
+        # --- Outlet Flow Distribution ---
+        print(f"\n{'='*80}")
+        print("OUTLET FLOW DISTRIBUTION")
+        print(f"{'='*80}")
+        print(f"  {'Outlet Node':<25} {'Flow Rate (L/s)':<20} {'Percentage of Total':<25}")
+        print(f"  {'-'*25} {'-'*20} {'-'*25}")
+        
+        outlet_nodes = network.outlet_nodes
+        total_outlet_flow = 0
+        
+        for outlet_node in outlet_nodes:
+            # Find connections leading to this outlet
+            for conn in network.connections:
+                if conn.to_node.id == outlet_node.id:
+                    flow = connection_flows.get(conn.component.id, 0.0)
+                    total_outlet_flow += flow
+                    percentage = (flow / total_flow_rate * 100) if total_flow_rate > 0 else 0
+                    print(f"  {outlet_node.name:<25} {flow * 1000:<20.3f} {percentage:>24.1f}%")
+        
+        print(f"  {'-'*25} {'-'*20} {'-'*25}")
+        print(f"  {'Total Outlet Flow':<25} {total_outlet_flow * 1000:<20.3f}")
+
+        # --- Pressure and Flow Details ---
+        print(f"\n{'='*80}")
+        print("PRESSURE AND FLOW DETAILS")
+        print(f"{'='*80}")
         
         # Calculate pressure drops if not already calculated
         if 'pressure_drops' not in solution_info:
@@ -812,34 +741,39 @@ class NodalMatrixSolver:
             
             for connection in network.connections:
                 component = connection.component
-                flow_rate = connection_flows[component.id]
+                flow_rate = connection_flows.get(component.id, 0.0)
                 dp = component.calculate_pressure_drop(flow_rate, fluid_properties)
                 solution_info['pressure_drops'][component.id] = dp
         
-        # Print connection flows
-        print(f"\n{'Component':<20} {'Type':<12} {'Flow Rate':<12} {'Pressure Drop'}")
-        print(f"{'Name':<20} {'':12} {'(L/s)':<12} {'(kPa)'}")
-        print("-" * 65)
+        # Print connection flows and pressure drops
+        print(f"  {'Component':<20} {'Type':<15} {'Flow Rate (L/s)':<20} {'Pressure Drop (kPa)':<20}")
+        print(f"  {'-'*20} {'-'*15} {'-'*20} {'-'*20}")
         
         for connection in network.connections:
             component = connection.component
-            flow_rate = connection_flows[component.id]
+            flow_rate = connection_flows.get(component.id, 0.0)
             pressure_drop = solution_info['pressure_drops'].get(component.id, 0)
             
-            print(f"{component.name:<20} {component.component_type.value:<12} "
-                  f"{flow_rate*1000:<12.3f} {pressure_drop/1000:<12.1f}")
+            print(f"  {component.name:<20} {component.component_type.value:<15} "
+                  f"{flow_rate * 1000:<20.3f} {pressure_drop / 1000:<20.2f}")
         
         # Print node pressures
-        print(f"\n{'Node':<20} {'Pressure (kPa)':<15} {'Elevation (m)'}")
-        print("-" * 45)
+        print(f"\n  {'Node':<20} {'Pressure (kPa)':<20} {'Elevation (m)':<15}")
+        print(f"  {'-'*20} {'-'*20} {'-'*15}")
         
-        for node_id, pressure in solution_info['node_pressures'].items():
-            node = network.nodes[node_id]
-            print(f"{node.name:<20} {pressure/1000:<15.1f} {node.elevation:<12.1f}")
+        sorted_nodes = sorted(solution_info.get('node_pressures', {}).items(), key=lambda item: item[1], reverse=True)
         
-        # Print warnings if any
+        for node_id, pressure in sorted_nodes:
+            node = network.nodes.get(node_id)
+            if node:
+                print(f"  {node.name:<20} {pressure / 1000:<20.2f} {node.elevation:<15.1f}")
+        
+        # --- Warnings ---
         if 'warnings' in solution_info and solution_info['warnings']:
-            print(f"\n{'WARNINGS':<20}")
-            print("-" * 45)
+            print(f"\n{'='*80}")
+            print("WARNINGS")
+            print(f"{'='*80}")
             for warning in solution_info['warnings']:
-                print(f"⚠️  {warning}")
+                print(f"  - {warning}")
+        
+        print(f"\n{'='*80}\n")

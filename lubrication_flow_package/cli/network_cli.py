@@ -157,7 +157,7 @@ def create_network_template(output_file: str, format_type: str = 'json'):
         raise ValueError(f"Unsupported format: {format_type}")
 
 
-def simulate_network(config_file: str, output_file: Optional[str] = None, solver_config_file: Optional[str] = None):
+def simulate_network(config_file: str, output_file: Optional[str] = None, solver_config_file: Optional[str] = None, verbose: bool = False):
     """Simulate a network from configuration file"""
     
     # Determine file format
@@ -176,8 +176,9 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
             print(f"Unsupported file format: {file_path.suffix}")
             return False
         
-        print(f"Loaded configuration: {config.network_name}")
-        print(f"Description: {config.description}")
+        if verbose:
+            print(f"Loaded configuration: {config.network_name}")
+            print(f"Description: {config.description}")
         
     except Exception as e:
         print(f"Error loading configuration: {e}")
@@ -186,7 +187,8 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
     # Build network and simulation config
     try:
         network, sim_config = NetworkConfigLoader.build_network(config)
-        print(f"Built network with {len(network.nodes)} nodes and {len(network.connections)} connections")
+        if verbose:
+            print(f"Built network with {len(network.nodes)} nodes and {len(network.connections)} connections")
         
     except Exception as e:
         print(f"Error building network: {e}")
@@ -200,10 +202,12 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
             print(f"   - {error}")
         return False
     
-    print("Network validation passed")
+    if verbose:
+        print("Network validation passed")
     
     # Print network info
-    network.print_network_info()
+    if verbose:
+        network.print_network_info()
     
     # Create solver
     try:
@@ -354,6 +358,7 @@ Examples:
                                 help='Solver type to use (default: network)')
     simulate_parser.add_argument('--output', help='Save results to file')
     simulate_parser.add_argument('--solver-config', help='Path to solver configuration file')
+    simulate_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate a network configuration file')
@@ -364,7 +369,7 @@ Examples:
     if args.command == 'template':
         create_network_template(args.output, args.format)
     elif args.command == 'simulate':
-        success = simulate_network(args.config_file, args.output, args.solver_config)
+        success = simulate_network(args.config_file, args.output, args.solver_config, args.verbose)
         sys.exit(0 if success else 1)
     elif args.command == 'validate':
         success = validate_network_config(args.config_file)
