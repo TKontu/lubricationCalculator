@@ -214,7 +214,9 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
         solver = NodalMatrixSolver(
             config_file=solver_config_file,
             oil_density=sim_config.oil_density,
-            oil_type=sim_config.oil_type
+            oil_type=sim_config.oil_type,
+            viscosity_model=sim_config.viscosity_model,
+            viscosity_parameters=sim_config.viscosity_parameters
         )
         connection_flows, solution_info = (
             solver.solve_nodal_network_with_pump_physics(

@@ -1,185 +1,116 @@
 {
   "network_name": "My Complex Network",
-  "description": "A complex network with multiple junctions",
+  "description": "A complex network with user-defined fluid properties",
   "nodes": [
     {
       "id": "inlet",
-      "name": "Main Inlet",
-      "elevation": 0.0,
-      "type": "inlet",
-      "x": 0.0,
-      "y": 0.0
+      "name": "Inlet",
+      "elevation": 0,
+      "type": "inlet"
     },
     {
-      "id": "junction1",
-      "name": "Primary Junction",
-      "elevation": 1.0,
-      "type": "junction",
-      "x": 10.0,
-      "y": 0.0
+      "id": "j1",
+      "name": "Junction 1",
+      "elevation": 1
     },
     {
-      "id": "junction2",
-      "name": "Secondary Junction A",
-      "elevation": 2.0,
-      "type": "junction",
-      "x": 20.0,
-      "y": 5.0
-    },
-    {
-      "id": "junction3",
-      "name": "Secondary Junction B",
-      "elevation": 1.5,
-      "type": "junction",
-      "x": 20.0,
-      "y": -5.0
+      "id": "j2",
+      "name": "Junction 2",
+      "elevation": 1
     },
     {
       "id": "outlet1",
-      "name": "Outlet 1A",
-      "elevation": 2.5,
-      "type": "outlet",
-      "x": 30.0,
-      "y": 8.0
+      "name": "Outlet 1",
+      "elevation": 2,
+      "type": "outlet"
     },
     {
       "id": "outlet2",
-      "name": "Outlet 1B",
-      "elevation": 2.0,
-      "type": "outlet",
-      "x": 30.0,
-      "y": 2.0
-    },
-    {
-      "id": "outlet3",
-      "name": "Outlet 2A",
-      "elevation": 1.8,
-      "type": "outlet",
-      "x": 30.0,
-      "y": -2.0
-    },
-    {
-      "id": "outlet4",
-      "name": "Outlet 2B",
-      "elevation": 1.2,
-      "type": "outlet",
-      "x": 30.0,
-      "y": -8.0
+      "name": "Outlet 2",
+      "elevation": 2,
+      "type": "outlet"
     }
   ],
   "components": [
     {
-      "id": "main_channel",
-      "name": "Main Supply",
+      "id": "c1",
+      "name": "Channel 1",
       "type": "channel",
       "diameter": 0.1,
-      "length": 10.0
+      "length": 10
     },
     {
-      "id": "branch_a",
-      "name": "Branch A",
+      "id": "c2",
+      "name": "Channel 2",
       "type": "channel",
-      "diameter": 0.06,
-      "length": 12.0
+      "diameter": 0.05,
+      "length": 5
     },
     {
-      "id": "branch_b",
-      "name": "Branch B",
+      "id": "c3",
+      "name": "Channel 3",
       "type": "channel",
-      "diameter": 0.06,
-      "length": 12.0
+      "diameter": 0.05,
+      "length": 5
     },
     {
-      "id": "sub_a1",
-      "name": "Sub-branch A1",
-      "type": "channel",
-      "diameter": 0.04,
-      "length": 8.0
+      "id": "n1",
+      "name": "Nozzle 1",
+      "type": "nozzle",
+      "diameter": 0.02
     },
     {
-      "id": "sub_a2",
-      "name": "Sub-branch A2",
-      "type": "channel",
-      "diameter": 0.04,
-      "length": 6.0
-    },
-    {
-      "id": "sub_b1",
-      "name": "Sub-branch B1",
-      "type": "channel",
-      "diameter": 0.04,
-      "length": 7.0
-    },
-    {
-      "id": "sub_b2",
-      "name": "Sub-branch B2",
-      "type": "channel",
-      "diameter": 0.04,
-      "length": 9.0
+      "id": "n2",
+      "name": "Nozzle 2",
+      "type": "nozzle",
+      "diameter": 0.02
     }
   ],
   "connections": [
     {
       "from_node": "inlet",
-      "to_node": "junction1",
-      "component": "main_channel"
+      "to_node": "j1",
+      "component": "c1"
     },
     {
-      "from_node": "junction1",
-      "to_node": "junction2",
-      "component": "branch_a"
+      "from_node": "j1",
+      "to_node": "j2",
+      "component": "c2"
     },
     {
-      "from_node": "junction1",
-      "to_node": "junction3",
-      "component": "branch_b"
-    },
-    {
-      "from_node": "junction2",
+      "from_node": "j1",
       "to_node": "outlet1",
-      "component": "sub_a1"
+      "component": "c3"
     },
     {
-      "from_node": "junction2",
+      "from_node": "j2",
       "to_node": "outlet2",
-      "component": "sub_a2"
+      "component": "n1"
     },
     {
-      "from_node": "junction3",
-      "to_node": "outlet3",
-      "component": "sub_b1"
-    },
-    {
-      "from_node": "junction3",
-      "to_node": "outlet4",
-      "component": "sub_b2"
+      "from_node": "j2",
+      "to_node": "outlet1",
+      "component": "n2"
     }
   ],
   "simulation": {
     "flow_parameters": {
-      "total_flow_rate": 0.03,
-      "temperature": 45.0,
-      "inlet_pressure": 280000.0,
-      "outlet_pressure": null
+      "total_flow_rate": 0.02,
+      "temperature": 50,
+      "inlet_pressure": 300000
     },
     "fluid_properties": {
-      "oil_density": 900.0,
-      "oil_type": "SAE40"
+      "oil_density": 850,
+      "viscosity_model": "vogel",
+      "viscosity_parameters": {
+        "A": 0.00012,
+        "B": 1100,
+        "C": 150
+      }
     },
     "solver_settings": {
-      "max_iterations": 100,
-      "tolerance": 1e-06,
-      "relaxation_factor": 0.8
-    },
-    "output_settings": {
-      "output_units": "metric",
-      "detailed_output": true,
-      "save_results": false,
-      "results_file": null
+      "max_iterations": 200,
+      "tolerance": 1e-7
     }
-  },
-  "metadata": {
-    "created_by": "NetworkBuilder",
-    "version": "1.0"
   }
 }

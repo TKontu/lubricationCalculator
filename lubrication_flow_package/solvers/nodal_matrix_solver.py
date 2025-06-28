@@ -41,10 +41,13 @@ class NodalMatrixSolver:
     This is the canonical nodal solver for the project, consolidating all nodal solving functionality.
     """
     
-    def __init__(self, config: Optional[SolverConfig] = None, 
+    def __init__(self, config: Optional[SolverConfig] = None,
                  config_file: Optional[str] = None,
-                 oil_density: float = 900.0, 
-                 oil_type: str = "SAE30", logger: Optional[logging.Logger] = None):
+                 oil_density: float = 900.0,
+                 oil_type: str = "SAE30",
+                 viscosity_model: Optional[str] = None,
+                 viscosity_parameters: Optional[Dict[str, float]] = None,
+                 logger: Optional[logging.Logger] = None):
         """
         Initialize the nodal matrix solver.
         
@@ -53,6 +56,8 @@ class NodalMatrixSolver:
             config_file: Path to a YAML file with solver configuration
             oil_density: Oil density in kg/m³
             oil_type: Oil type for viscosity calculation
+            viscosity_model: The viscosity model to use
+            viscosity_parameters: The parameters for the viscosity model
             logger: Optional logger for debugging output
         """
         if config:
@@ -64,29 +69,34 @@ class NodalMatrixSolver:
             
         self.oil_density = oil_density
         self.oil_type = oil_type
+        self.viscosity_model = viscosity_model
+        self.viscosity_parameters = viscosity_parameters
         self.gravity = 9.81
         self.logger = logger or logging.getLogger(__name__)
     
     def calculate_viscosity(self, temperature: float) -> float:
         """Calculate dynamic viscosity using Vogel equation"""
         T = temperature + 273.15
-        
-        viscosity_params = {
-            "SAE10": {"A": 0.00004, "B": 950, "C": 135},
-            "SAE20": {"A": 0.00006, "B": 1050, "C": 138},
-            "SAE30": {"A": 0.0001, "B": 1200, "C": 140},
-            "SAE40": {"A": 0.00015, "B": 1300, "C": 142},
-            "SAE50": {"A": 0.0002, "B": 1400, "C": 145},
-            "SAE60": {"A": 0.00025, "B": 1500, "C": 148},
-            "VG220": {"A": 0.000064, "B": 1455, "C": 131},
-            "VG320": {"A": 0.000064, "B": 1520, "C": 131},
-            "VG460": {"A": 0.000064, "B": 1576, "C": 131}
-        }
-        
-        if self.oil_type not in viscosity_params:
-            raise ValueError(f"Oil type {self.oil_type} not supported")
-        
-        params = viscosity_params[self.oil_type]
+
+        if self.viscosity_model == 'vogel' and self.viscosity_parameters:
+            params = self.viscosity_parameters
+        else:
+            viscosity_params = {
+                "SAE10": {"A": 0.00004, "B": 950, "C": 135},
+                "SAE20": {"A": 0.00006, "B": 1050, "C": 138},
+                "SAE30": {"A": 0.0001, "B": 1200, "C": 140},
+                "SAE40": {"A": 0.00015, "B": 1300, "C": 142},
+                "SAE50": {"A": 0.0002, "B": 1400, "C": 145},
+                "SAE60": {"A": 0.00025, "B": 1500, "C": 148},
+                "VG220": {"A": 0.000064, "B": 1455, "C": 131},
+                "VG320": {"A": 0.000064, "B": 1520, "C": 131},
+                "VG460": {"A": 0.000064, "B": 1576, "C": 131}
+            }
+            
+            if self.oil_type not in viscosity_params:
+                raise ValueError(f"Oil type {self.oil_type} not supported")
+            
+            params = viscosity_params[self.oil_type]
         
         if T < params["C"]:
             T = params["C"] + 1
@@ -314,6 +324,7 @@ class NodalMatrixSolver:
         # Iterative solution
         relaxation_factor = self.config.relaxation_factor
         last_max_flow_change = float('inf')
+        flow_changes = []
 
         for iteration in range(max_iter):
             # Step 1: Compute resistances and conductances from current flows
@@ -410,22 +421,28 @@ class NodalMatrixSolver:
                 new_edge_flows[conn.component.id] = flow
             
             # Step 7: Check convergence
-            max_flow_change = max(abs(new_edge_flows[conn_id] - edge_flows[conn_id])
+            max_flow_change = max(abs(new_edge_flows[conn_id] - edge_flows[conn_id]) 
                                 for conn_id in edge_flows)
+            flow_changes.append(max_flow_change)
+            if len(flow_changes) > 10:
+                flow_changes.pop(0)
+                if np.std(flow_changes) < 1e-8:
+                    self.logger.warning("Solver stalled. Converged with reduced tolerance.")
+                    break
 
             max_pressure_error = 0.0
             for conn in network.connections:
                 from_idx = node_to_idx[conn.from_node.id]
                 to_idx = node_to_idx[conn.to_node.id]
-
+                
                 pressure_diff = pressures_full[from_idx] - pressures_full[to_idx]
                 flow = new_edge_flows[conn.component.id]
                 resistance = edge_resistances[conn.component.id]
-
+                
                 expected_pressure_drop = resistance * flow
                 pressure_error = abs(pressure_diff - expected_pressure_drop)
                 max_pressure_error = max(max_pressure_error, pressure_error)
-
+            
             self.logger.debug(f"Iteration {iteration + 1}: max_flow_change={max_flow_change:.2e}, "
                             f"max_pressure_error={max_pressure_error:.2e}")
 
