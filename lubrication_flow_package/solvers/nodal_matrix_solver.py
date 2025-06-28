@@ -41,18 +41,27 @@ class NodalMatrixSolver:
     This is the canonical nodal solver for the project, consolidating all nodal solving functionality.
     """
     
-    def __init__(self, config: Optional[SolverConfig] = None, oil_density: float = 900.0, 
+    def __init__(self, config: Optional[SolverConfig] = None, 
+                 config_file: Optional[str] = None,
+                 oil_density: float = 900.0, 
                  oil_type: str = "SAE30", logger: Optional[logging.Logger] = None):
         """
         Initialize the nodal matrix solver.
         
         Args:
-            config: Solver configuration (uses default if None)
+            config: Solver configuration object (takes precedence over config_file)
+            config_file: Path to a YAML file with solver configuration
             oil_density: Oil density in kg/m³
             oil_type: Oil type for viscosity calculation
             logger: Optional logger for debugging output
         """
-        self.config = config or SolverConfig()
+        if config:
+            self.config = config
+        elif config_file:
+            self.config = SolverConfig.from_yaml(config_file)
+        else:
+            self.config = SolverConfig()
+            
         self.oil_density = oil_density
         self.oil_type = oil_type
         self.gravity = 9.81
@@ -396,10 +405,12 @@ class NodalMatrixSolver:
         info = {
             'actual_flow_rate':        sol['total_flow_rate'],
             'required_inlet_pressure': sol['inlet_pressure'],
-            'fluid_properties':        sol['fluid_properties']
+            'fluid_properties':        sol['fluid_properties'],
+            'temperature':             temperature,
+            'viscosity':               sol['fluid_properties']['viscosity']
         }
 
-        return flows, info
+        return flows, sol
 
 
     def _calculate_component_resistance(

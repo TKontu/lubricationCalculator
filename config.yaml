@@ -1,0 +1,6 @@
+solver_config:
+  max_iterations: 100
+  tolerance: 1.0e-6
+  min_resistance: 1.0e-12
+  dq_absolute: 1.0e-8
+  relaxation_factor: 0.5

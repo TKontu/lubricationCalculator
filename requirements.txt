@@ -1,3 +1,4 @@
 # Dependencies for lubrication flow calculator
 numpy>=1.20.0
 scipy>=1.7.0
+PyYAML>=6.0

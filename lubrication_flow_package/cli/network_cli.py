@@ -149,21 +149,21 @@ def create_network_template(output_file: str, format_type: str = 'json'):
     
     if format_type.lower() == 'json':
         NetworkConfigSaver.save_json(config, output_file)
-        print(f"✅ JSON template created: {output_file}")
+        print(f"JSON template created: {output_file}")
     elif format_type.lower() == 'xml':
         NetworkConfigSaver.save_xml(config, output_file)
-        print(f"✅ XML template created: {output_file}")
+        print(f"XML template created: {output_file}")
     else:
         raise ValueError(f"Unsupported format: {format_type}")
 
 
-def simulate_network(config_file: str, output_file: Optional[str] = None):
+def simulate_network(config_file: str, output_file: Optional[str] = None, solver_config_file: Optional[str] = None):
     """Simulate a network from configuration file"""
     
     # Determine file format
     file_path = Path(config_file)
     if not file_path.exists():
-        print(f"❌ Configuration file not found: {config_file}")
+        print(f"Configuration file not found: {config_file}")
         return False
     
     # Load configuration
@@ -173,34 +173,34 @@ def simulate_network(config_file: str, output_file: Optional[str] = None):
         elif file_path.suffix.lower() == '.xml':
             config = NetworkConfigLoader.load_xml(config_file)
         else:
-            print(f"❌ Unsupported file format: {file_path.suffix}")
+            print(f"Unsupported file format: {file_path.suffix}")
             return False
         
-        print(f"📁 Loaded configuration: {config.network_name}")
-        print(f"📝 Description: {config.description}")
+        print(f"Loaded configuration: {config.network_name}")
+        print(f"Description: {config.description}")
         
     except Exception as e:
-        print(f"❌ Error loading configuration: {e}")
+        print(f"Error loading configuration: {e}")
         return False
     
     # Build network and simulation config
     try:
         network, sim_config = NetworkConfigLoader.build_network(config)
-        print(f"🔧 Built network with {len(network.nodes)} nodes and {len(network.connections)} connections")
+        print(f"Built network with {len(network.nodes)} nodes and {len(network.connections)} connections")
         
     except Exception as e:
-        print(f"❌ Error building network: {e}")
+        print(f"Error building network: {e}")
         return False
     
     # Validate network
     is_valid, errors = network.validate_network()
     if not is_valid:
-        print("❌ Network validation failed:")
+        print("Network validation failed:")
         for error in errors:
             print(f"   - {error}")
         return False
     
-    print("✅ Network validation passed")
+    print("Network validation passed")
     
     # Print network info
     network.print_network_info()
@@ -208,6 +208,7 @@ def simulate_network(config_file: str, output_file: Optional[str] = None):
     # Create solver
     try:
         solver = NodalMatrixSolver(
+            config_file=solver_config_file,
             oil_density=sim_config.oil_density,
             oil_type=sim_config.oil_type
         )
@@ -218,15 +219,15 @@ def simulate_network(config_file: str, output_file: Optional[str] = None):
                 temperature=sim_config.temperature,
                 pump_max_pressure=sim_config.inlet_pressure,
                 outlet_pressure=sim_config.outlet_pressure or 101325.0,
-                max_iterations=sim_config.solver_settings.max_iterations,
-                tolerance=sim_config.solver_settings.tolerance
+                max_iterations=sim_config.max_iterations,
+                tolerance=sim_config.tolerance
             )
         )
     
-        print(f"🔬 Simulation completed")
+        print(f"Simulation completed")
         
     except Exception as e:
-        print(f"❌ Simulation failed: {e}")
+        print(f"Simulation failed: {e}")
         return False
     
     # Print results
@@ -236,7 +237,7 @@ def simulate_network(config_file: str, output_file: Optional[str] = None):
     if hasattr(solver, 'analyze_system_adequacy'):
         analysis = solver.analyze_system_adequacy(network, connection_flows, solution_info)
         print(f"\n🔍 SYSTEM ANALYSIS:")
-        print(f"   System adequate: {'✅ YES' if analysis['adequate'] else '❌ NO'}")
+        print(f"   System adequate: {'YES' if analysis['adequate'] else 'NO'}")
         if analysis['issues']:
             print("   Issues found:")
             for issue in analysis['issues']:
@@ -261,10 +262,10 @@ def simulate_network(config_file: str, output_file: Optional[str] = None):
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2, default=str)
             
-            print(f"💾 Results saved to: {output_file}")
+            print(f"Results saved to: {output_file}")
             
         except Exception as e:
-            print(f"⚠️  Warning: Could not save results: {e}")
+            print(f"Warning: Could not save results: {e}")
     
     return True
 
@@ -274,7 +275,7 @@ def validate_network_config(config_file: str):
     
     file_path = Path(config_file)
     if not file_path.exists():
-        print(f"❌ Configuration file not found: {config_file}")
+        print(f"Configuration file not found: {config_file}")
         return False
     
     try:
@@ -284,7 +285,7 @@ def validate_network_config(config_file: str):
         elif file_path.suffix.lower() == '.xml':
             config = NetworkConfigLoader.load_xml(config_file)
         else:
-            print(f"❌ Unsupported file format: {file_path.suffix}")
+            print(f"Unsupported file format: {file_path.suffix}")
             return False
         
         print(f"📁 Validating configuration: {config.network_name}")
@@ -296,7 +297,7 @@ def validate_network_config(config_file: str):
         is_valid, errors = network.validate_network()
         
         if is_valid:
-            print("✅ Network configuration is valid")
+            print("Network configuration is valid")
             print(f"   - {len(network.nodes)} nodes")
             print(f"   - {len(network.connections)} connections")
             print(f"   - {len(network.outlet_nodes)} outlets")
@@ -307,13 +308,13 @@ def validate_network_config(config_file: str):
             
             return True
         else:
-            print("❌ Network validation failed:")
+            print("Network validation failed:")
             for error in errors:
                 print(f"   - {error}")
             return False
             
     except Exception as e:
-        print(f"❌ Error validating configuration: {e}")
+        print(f"Error validating configuration: {e}")
         return False
 
 
@@ -349,9 +350,10 @@ Examples:
     # Simulate command
     simulate_parser = subparsers.add_parser('simulate', help='Simulate a network from configuration file')
     simulate_parser.add_argument('config_file', help='Network configuration file')
-    simulate_parser.add_argument(default='network',
+    simulate_parser.add_argument('--solver', default='network',
                                 help='Solver type to use (default: network)')
     simulate_parser.add_argument('--output', help='Save results to file')
+    simulate_parser.add_argument('--solver-config', help='Path to solver configuration file')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate a network configuration file')
@@ -362,7 +364,7 @@ Examples:
     if args.command == 'template':
         create_network_template(args.output, args.format)
     elif args.command == 'simulate':
-        success = simulate_network(args.config_file, args.output)
+        success = simulate_network(args.config_file, args.output, args.solver_config)
         sys.exit(0 if success else 1)
     elif args.command == 'validate':
         success = validate_network_config(args.config_file)

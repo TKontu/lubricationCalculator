@@ -31,7 +31,7 @@ def create_two_node_network(pressure_A, pressure_B, conductance):
 # Fixtures for re-use
 @pytest.fixture
 def solver():
-    return NodalMatrixSolver(config=SolverConfig())
+    return NodalMatrixSolver()
 
 @pytest.fixture
 def fluid_properties():

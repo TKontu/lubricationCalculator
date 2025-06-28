@@ -47,7 +47,7 @@ def test_single_pipe_nozzle_flow_driven(solver):
     )
 
     # 1) Check mass conservation
-    assert pytest.approx(info["actual_flow_rate"], rel=1e-4) == Q
+    assert pytest.approx(info["total_flow_rate"], rel=1e-4) == Q
     assert pytest.approx(flows["pipe"], rel=1e-4)   == Q
     assert pytest.approx(flows["nozzle"], rel=1e-4) == Q
 
@@ -56,7 +56,7 @@ def test_single_pipe_nozzle_flow_driven(solver):
     dp_nozzle = nozzle.calculate_pressure_drop(Q, info["fluid_properties"])
     expected_pin = dp_pipe + dp_nozzle + p_out
 
-    assert pytest.approx(info["required_inlet_pressure"], rel=0.05) == expected_pin
+    assert pytest.approx(info["inlet_pressure"], rel=0.05) == expected_pin
 
 
 # -----------------------------------------------------------------------------
@@ -101,7 +101,7 @@ def test_t_split_flow_driven(solver):
     )
 
     # 1) Total flow delivered
-    assert pytest.approx(info["actual_flow_rate"], rel=1e-4) == Q_tot
+    assert pytest.approx(info["total_flow_rate"], rel=1e-4) == Q_tot
 
     # 2) Mass conservation in each leg
     assert pytest.approx(flows["pipe1"], rel=1e-4)  == flows["nozzle1"]
@@ -121,4 +121,4 @@ def test_t_split_flow_driven(solver):
     )
     expected_pin = dp_inlet + dp_branch1 + p_out
 
-    assert pytest.approx(info["required_inlet_pressure"], rel=0.05) == expected_pin
+    assert pytest.approx(info["inlet_pressure"], rel=0.05) == expected_pin
