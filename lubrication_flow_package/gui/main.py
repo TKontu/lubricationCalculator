@@ -43,32 +43,6 @@ class PropertiesEditor(ttk.Frame):
         new_properties = {key: entry.get() for key, entry in self.entries.items()}
         self.app.update_element_properties(element_id, new_properties)
 
-class PlotOptionsDialog(simpledialog.Dialog):
-    def body(self, master):
-        self.title("Plot Options")
-        
-        ttk.Label(master, text="Plot Type:").grid(row=0, sticky=tk.W)
-        self.plot_type = tk.StringVar()
-        self.plot_type_combo = ttk.Combobox(master, textvariable=self.plot_type,
-                                            values=["Bar Chart", "Line Chart"])
-        self.plot_type_combo.grid(row=0, column=1, padx=5, pady=5)
-        self.plot_type_combo.current(0)
-
-        ttk.Label(master, text="Data to Plot:").grid(row=1, sticky=tk.W)
-        self.data_to_plot = tk.StringVar()
-        self.data_to_plot_combo = ttk.Combobox(master, textvariable=self.data_to_plot,
-                                               values=["Pressure", "Flow Rate"])
-        self.data_to_plot_combo.grid(row=1, column=1, padx=5, pady=5)
-        self.data_to_plot_combo.current(0)
-
-        return self.plot_type_combo
-
-    def apply(self):
-        self.result = {
-            "plot_type": self.plot_type.get(),
-            "data_to_plot": self.data_to_plot.get()
-        }
-
 class ComponentDialog(simpledialog.Dialog):
     def body(self, master):
         self.title("Select Component")
@@ -120,6 +94,7 @@ class ComponentDialog(simpledialog.Dialog):
 
 class NetworkGraph:
     def __init__(self, parent_frame, app):
+        super().__init__()
         self.parent_frame = parent_frame
         self.app = app
         self.graph = nx.Graph()
@@ -138,6 +113,8 @@ class NetworkGraph:
 
     def draw_grid(self):
         self.ax.clear()
+        self.ax.set_xlim(0, 800)
+        self.ax.set_ylim(0, 600)
         self.ax.set_xticks(range(0, 800, self.grid_size))
         self.ax.set_yticks(range(0, 600, self.grid_size))
         self.ax.grid(True)
@@ -183,7 +160,7 @@ class App(tk.Tk):
 
         self.add_node_button = ttk.Button(toolbar, text="Add Node", command=self.start_add_node)
         self.add_node_button.pack(side=tk.LEFT, padx=5, pady=5)
-        self.add_component_button = ttk.Button(toolbar, text="Add Component", command=self.add_component)
+        self.add_component_button = ttk.Button(toolbar, text="Add Component", command=self.start_add_component)
         self.add_component_button.pack(side=tk.LEFT, padx=5, pady=5)
         self.plot_button = ttk.Button(toolbar, text="Plot Results", command=self.plot_results, state=tk.DISABLED)
         self.plot_button.pack(side=tk.LEFT, padx=5, pady=5)
@@ -207,6 +184,17 @@ class App(tk.Tk):
             entry.pack(side=tk.RIGHT, expand=True, fill=tk.X)
             self.sim_entries[name] = entry
 
+        elements_frame = ttk.LabelFrame(sidebar_frame, text="Elements")
+        elements_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.nodes_listbox = tk.Listbox(elements_frame)
+        self.nodes_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.nodes_listbox.bind('<<ListboxSelect>>', self.on_node_select)
+
+        self.components_listbox = tk.Listbox(elements_frame)
+        self.components_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.components_listbox.bind('<<ListboxSelect>>', self.on_component_select)
+
         self.properties_editor = PropertiesEditor(sidebar_frame, self)
 
         results_frame = ttk.LabelFrame(sidebar_frame, text="Results", height=200)
@@ -224,7 +212,34 @@ class App(tk.Tk):
         self.component_counter = 0
         self.selected_nodes = []
         self.adding_node = False
+        self.adding_component = False
         self.figure_canvas_cid = None
+
+    def update_element_lists(self):
+        self.nodes_listbox.delete(0, tk.END)
+        for node in self.network_graph.graph.nodes():
+            self.nodes_listbox.insert(tk.END, node)
+
+        self.components_listbox.delete(0, tk.END)
+        for u, v, data in self.network_graph.graph.edges(data=True):
+            self.components_listbox.insert(tk.END, data.get('label', f"{u}-{v}"))
+
+    def on_node_select(self, event):
+        selection = event.widget.curselection()
+        if selection:
+            index = selection[0]
+            node_id = event.widget.get(index)
+            self.properties_editor.show_properties(node_id, self.network_graph.graph.nodes[node_id])
+
+    def on_component_select(self, event):
+        selection = event.widget.curselection()
+        if selection:
+            index = selection[0]
+            label = event.widget.get(index)
+            for u, v, data in self.network_graph.graph.edges(data=True):
+                if data.get('label') == label:
+                    self.properties_editor.show_properties(label, data)
+                    break
 
     def start_add_node(self):
         self.adding_node = True
@@ -246,18 +261,18 @@ class App(tk.Tk):
         node_name = f"Node {self.node_counter}"
         self.network_graph.graph.add_node(node_name, x=snapped_x, y=snapped_y, type='Node', elevation=0.0)
         self.network_graph.draw_graph()
+        self.update_element_lists()
         self.properties_editor.show_properties(node_name, self.network_graph.graph.nodes[node_name])
         
         self.adding_node = False
         self.network_graph.graph_canvas.get_tk_widget().config(cursor="")
         self.network_graph.figure.canvas.mpl_disconnect(self.figure_canvas_cid)
 
-    def add_component(self):
-        dialog = ComponentDialog(self)
-        if dialog.result:
-            self.component_data = dialog.result
-            self.selected_nodes = []
-            self.figure_canvas_cid = self.network_graph.figure.canvas.mpl_connect('pick_event', self.on_pick)
+    def start_add_component(self):
+        self.adding_component = True
+        self.selected_nodes = []
+        self.network_graph.graph_canvas.get_tk_widget().config(cursor="crosshair")
+        self.figure_canvas_cid = self.network_graph.figure.canvas.mpl_connect('pick_event', self.on_pick)
 
     def on_pick(self, event):
         artist = event.artist
@@ -266,24 +281,33 @@ class App(tk.Tk):
             if not indices.any():
                 return
             
-            nodes = list(self.network_graph.graph.nodes())
+            nodes = list(self.network_graph.graph.nodes)
             picked_node = nodes[indices[0]]
             
             self.select_node_for_connection(picked_node)
 
     def select_node_for_connection(self, node):
+        if not self.adding_component:
+            return
+            
         if node not in self.selected_nodes:
             self.selected_nodes.append(node)
         
         if len(self.selected_nodes) == 2:
-            self.component_counter += 1
-            comp_name = f"{self.component_data['type']} {self.component_counter}"
-            self.network_graph.graph.add_edge(self.selected_nodes[0], self.selected_nodes[1], label=comp_name, **self.component_data)
-            self.network_graph.draw_graph()
-            self.properties_editor.show_properties(comp_name, self.network_graph.graph.edges[self.selected_nodes[0], self.selected_nodes[1]])
+            dialog = ComponentDialog(self)
+            if dialog.result:
+                self.component_data = dialog.result
+                self.component_counter += 1
+                comp_name = f"{self.component_data['type']} {self.component_counter}"
+                self.network_graph.graph.add_edge(self.selected_nodes[0], self.selected_nodes[1], label=comp_name, **self.component_data)
+                self.network_graph.draw_graph()
+                self.update_element_lists()
+                self.properties_editor.show_properties(comp_name, self.network_graph.graph.edges[self.selected_nodes[0], self.selected_nodes[1]])
             
             self.network_graph.figure.canvas.mpl_disconnect(self.figure_canvas_cid)
             self.selected_nodes = []
+            self.adding_component = False
+            self.network_graph.graph_canvas.get_tk_widget().config(cursor="")
 
     def update_element_properties(self, element_id, properties):
         if element_id in self.network_graph.graph.nodes:

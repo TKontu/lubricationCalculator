@@ -2,29 +2,21 @@
 
 ## High Priority / Next Steps
 
-- **Graphical User Interface (GUI):**
-  - [x] **Phase 1: Basic GUI Structure**
-    - [x] Choose a GUI framework (e.g., tkinter, PyQt, PySide).
-    - [x] Implement the main application window and layout.
-    - [x] Create a canvas for network visualization.
-    - [x] Add a sidebar for controls and a properties editor.
-    - [x] Add a text area for displaying simulation results.
-  - [x] **Phase 2: Network Visualization**
-    - [x] Integrate a graph visualization library (e.g., networkx, Matplotlib).
-    - [x] Implement drawing of nodes and connections on the canvas.
-    - [x] Add support for panning and zooming the network view.
-  - [x] **Phase 3: Network Building**
-    - [x] Implement adding/removing nodes and components via the GUI.
-    - [x] Implement connecting nodes with components.
-    - [x] Develop a properties editor to modify the attributes of selected elements.
-  - [x] **Phase 4: Solver Integration**
-    - [x] Connect the "Run Simulation" button to the solver.
-    - [x] Display simulation results in the results text area.
-    - [x] Add error handling and display of solver warnings.
-  - [x] **Phase 5: Plotting and Visualization**
-    - [x] Add plotting capabilities to visualize pressure and flow distribution.
-    - [x] Implement color-coding of the network to represent pressure and flow.
-    - [x] Add options to customize the plots.
+- **Graphical User Interface (GUI) - Overhaul:**
+  - [ ] **Phase 1: Core Interaction Model**
+    - [ ] Implement a right-click context menu for nodes.
+    - [ ] Add options to the context menu: `Set as Inlet`, `Set as Outlet`, `Start Connection`, `Add Nozzle`, `Delete Node`.
+    - [ ] The `Add Nozzle` option should only be available for outlet nodes.
+  - [ ] **Phase 2: Intuitive Connection Workflow**
+    - [ ] Implement a "drawing mode" for creating connections (channels) between nodes.
+    - [ ] When connecting two nodes, a dialog should appear to define the channel's properties.
+  - [ ] **Phase 3: Component Placement**
+    - [ ] Implement adding nozzles to outlet nodes via the context menu.
+    - [ ] A dialog should appear to define the nozzle's properties.
+    - [ ] The visual representation of the node should change to indicate it has a nozzle.
+  - [ ] **Phase 4: Properties and Simulation**
+    - [ ] Ensure the properties editor correctly displays and saves properties for all elements.
+    - [ ] Ensure the simulation runs correctly with the new network building logic.
 - **Web-Based Interface:**
   - [ ] Create a web-based version of the tool using a framework like Flask or Django.
 
