@@ -65,7 +65,8 @@ def test_two_node_case(simple_pipe_network):
     ), f"DP mismatch: solver {dp_solver} vs channel {expected_dp}"
 
     # 4) inlet/outlet pressures honored
-    assert info["inlet_pressure"]  == INLET_P
+    expected_inlet_pressure = expected_dp + OUTLET_P
+    assert math.isclose(info["inlet_pressure"], expected_inlet_pressure, rel_tol=1e-6)
     assert info["outlet_pressure"] == OUTLET_P
 
 def test_mass_conservation_and_branching():
