@@ -31,8 +31,12 @@ class PropertiesEditor(ttk.Frame):
             frame.pack(fill=tk.X, padx=5, pady=2)
             label = ttk.Label(frame, text=f"{key}:")
             label.pack(side=tk.LEFT)
-            entry = ttk.Entry(frame)
-            entry.insert(0, str(value))
+            if key == 'type':
+                entry = ttk.Combobox(frame, values=["Node", "inlet", "outlet"])
+                entry.set(value)
+            else:
+                entry = ttk.Entry(frame)
+                entry.insert(0, str(value))
             entry.pack(side=tk.RIGHT, expand=True, fill=tk.X)
             self.entries[key] = entry
 
@@ -44,59 +48,27 @@ class PropertiesEditor(ttk.Frame):
         self.app.update_element_properties(element_id, new_properties)
 
 class ComponentDialog(simpledialog.Dialog):
+    def __init__(self, parent, title, component_type, properties):
+        self.component_type = component_type
+        self.properties = properties
+        super().__init__(parent, title=title)
+
     def body(self, master):
-        self.title("Select Component")
-        ttk.Label(master, text="Component Type:").grid(row=0, sticky=tk.W)
-        self.component_type = tk.StringVar()
-        self.component_type_combo = ttk.Combobox(master, textvariable=self.component_type,
-                                                 values=["Channel", "Nozzle", "Connector"])
-        self.component_type_combo.grid(row=0, column=1, padx=5, pady=5)
-        self.component_type_combo.current(0)
-
-        self.properties_frame = ttk.Frame(master)
-        self.properties_frame.grid(row=1, columnspan=2, sticky=tk.W)
         self.entries = {}
-
-        self.component_type.trace_add('write', self.update_properties)
-        self.update_properties()
-
-        return self.component_type_combo
-
-    def update_properties(self, *args):
-        for widget in self.properties_frame.winfo_children():
-            widget.destroy()
-        self.entries.clear()
-
-        comp_type = self.component_type.get()
-        if comp_type == "Channel":
-            self.add_property("diameter", 0.1)
-            self.add_property("length", 10)
-        elif comp_type == "Nozzle":
-            self.add_property("diameter", 0.02)
-        elif comp_type == "Connector":
-            self.add_property("diameter", 0.1)
-
-    def add_property(self, name, default_value):
-        frame = ttk.Frame(self.properties_frame)
-        frame.pack(fill=tk.X, padx=5, pady=2)
-        label = ttk.Label(frame, text=f"{name}:")
-        label.pack(side=tk.LEFT)
-        entry = ttk.Entry(frame)
-        entry.insert(0, str(default_value))
-        entry.pack(side=tk.RIGHT)
-        self.entries[name] = entry
+        for key, value in self.properties.items():
+            ttk.Label(master, text=f"{key}:").grid(row=len(self.entries), sticky=tk.W)
+            entry = ttk.Entry(master)
+            entry.insert(0, str(value))
+            entry.grid(row=len(self.entries), column=1, padx=5, pady=5)
+            self.entries[key] = entry
+        return self.entries[list(self.properties.keys())[0]]
 
     def apply(self):
-        self.result = {
-            "type": self.component_type.get(),
-            "properties": {key: float(entry.get()) for key, entry in self.entries.items()}
-        }
+        self.result = {key: float(entry.get()) for key, entry in self.entries.items()}
 
 class NetworkGraph:
-    def __init__(self, parent_frame, app):
-        super().__init__()
+    def __init__(self, parent_frame):
         self.parent_frame = parent_frame
-        self.app = app
         self.graph = nx.Graph()
         self.figure = plt.figure(figsize=(8, 6))
         self.ax = self.figure.add_subplot(111)
@@ -119,12 +91,12 @@ class NetworkGraph:
         self.ax.set_yticks(range(0, 600, self.grid_size))
         self.ax.grid(True)
 
-    def draw_graph(self, node_colors=None, edge_colors=None):
+    def draw_graph(self, app, node_colors=None, edge_colors=None):
         self.draw_grid()
         pos = {node: (data['x'], data['y']) for node, data in self.graph.nodes(data=True)}
         
         if node_colors is None:
-            node_colors = 'skyblue'
+            node_colors = [data.get('color', 'skyblue') for node, data in self.graph.nodes(data=True)]
         if edge_colors is None:
             edge_colors = 'gray'
             
@@ -160,10 +132,6 @@ class App(tk.Tk):
 
         self.add_node_button = ttk.Button(toolbar, text="Add Node", command=self.start_add_node)
         self.add_node_button.pack(side=tk.LEFT, padx=5, pady=5)
-        self.add_component_button = ttk.Button(toolbar, text="Add Component", command=self.start_add_component)
-        self.add_component_button.pack(side=tk.LEFT, padx=5, pady=5)
-        self.plot_button = ttk.Button(toolbar, text="Plot Results", command=self.plot_results, state=tk.DISABLED)
-        self.plot_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         sim_settings_frame = ttk.LabelFrame(sidebar_frame, text="Simulation Settings")
         sim_settings_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -207,13 +175,14 @@ class App(tk.Tk):
         self.run_button = ttk.Button(sidebar_frame, text="Run Simulation", command=self.run_simulation)
         self.run_button.pack(fill=tk.X, padx=5, pady=5)
 
-        self.network_graph = NetworkGraph(canvas_frame, self)
+        self.network_graph = NetworkGraph(canvas_frame)
         self.node_counter = 0
         self.component_counter = 0
-        self.selected_nodes = []
-        self.adding_node = False
-        self.adding_component = False
-        self.figure_canvas_cid = None
+        self.selected_node = None
+        self.connecting = False
+
+        self.network_graph.figure.canvas.mpl_connect('button_press_event', self.on_canvas_click)
+        self.network_graph.figure.canvas.mpl_connect('pick_event', self.on_pick)
 
     def update_element_lists(self):
         self.nodes_listbox.delete(0, tk.END)
@@ -229,6 +198,7 @@ class App(tk.Tk):
         if selection:
             index = selection[0]
             node_id = event.widget.get(index)
+            self.selected_node = node_id
             self.properties_editor.show_properties(node_id, self.network_graph.graph.nodes[node_id])
 
     def on_component_select(self, event):
@@ -241,38 +211,21 @@ class App(tk.Tk):
                     self.properties_editor.show_properties(label, data)
                     break
 
-    def start_add_node(self):
-        self.adding_node = True
-        self.network_graph.graph_canvas.get_tk_widget().config(cursor="crosshair")
-        self.figure_canvas_cid = self.network_graph.figure.canvas.mpl_connect('button_press_event', self.add_node_on_click)
-
-    def add_node_on_click(self, event):
-        if not self.adding_node:
-            return
-        x, y = event.xdata, event.ydata
-        if x is None or y is None:
-            return
-        
-        grid_size = self.network_graph.grid_size
-        snapped_x = round(x / grid_size) * grid_size
-        snapped_y = round(y / grid_size) * grid_size
-
-        self.node_counter += 1
-        node_name = f"Node {self.node_counter}"
-        self.network_graph.graph.add_node(node_name, x=snapped_x, y=snapped_y, type='Node', elevation=0.0)
-        self.network_graph.draw_graph()
-        self.update_element_lists()
-        self.properties_editor.show_properties(node_name, self.network_graph.graph.nodes[node_name])
-        
-        self.adding_node = False
-        self.network_graph.graph_canvas.get_tk_widget().config(cursor="")
-        self.network_graph.figure.canvas.mpl_disconnect(self.figure_canvas_cid)
-
-    def start_add_component(self):
-        self.adding_component = True
-        self.selected_nodes = []
-        self.network_graph.graph_canvas.get_tk_widget().config(cursor="crosshair")
-        self.figure_canvas_cid = self.network_graph.figure.canvas.mpl_connect('pick_event', self.on_pick)
+    def on_canvas_click(self, event):
+        if event.button == 3: # Right-click
+            x, y = event.xdata, event.ydata
+            if x is not None and y is not None:
+                min_dist = float('inf')
+                selected_node = None
+                for node, data in self.network_graph.graph.nodes(data=True):
+                    dist = (data['x'] - x)**2 + (data['y'] - y)**2
+                    if dist < min_dist:
+                        min_dist = dist
+                        selected_node = node
+                
+                if min_dist < 200: # Only show context menu if a node is clicked
+                    self.selected_node = selected_node
+                    self.show_context_menu(event)
 
     def on_pick(self, event):
         artist = event.artist
@@ -284,42 +237,105 @@ class App(tk.Tk):
             nodes = list(self.network_graph.graph.nodes)
             picked_node = nodes[indices[0]]
             
-            self.select_node_for_connection(picked_node)
+            if self.connecting:
+                self.complete_connection(picked_node)
+            else:
+                self.selected_node = picked_node
+                self.properties_editor.show_properties(picked_node, self.network_graph.graph.nodes[picked_node])
 
-    def select_node_for_connection(self, node):
-        if not self.adding_component:
-            return
-            
-        if node not in self.selected_nodes:
-            self.selected_nodes.append(node)
+    def show_context_menu(self, event):
+        context_menu = tk.Menu(self, tearoff=0)
+        if self.selected_node:
+            node_data = self.network_graph.graph.nodes[self.selected_node]
+            context_menu.add_command(label="Set as Inlet", command=lambda: self.set_node_type('inlet'))
+            context_menu.add_command(label="Set as Outlet", command=lambda: self.set_node_type('outlet'))
+            context_menu.add_command(label="Start Connection", command=self.start_connection)
+            if node_data.get('type') == 'outlet':
+                context_menu.add_command(label="Add Nozzle", command=self.add_nozzle)
+            context_menu.add_separator()
+            context_menu.add_command(label="Delete Node", command=self.delete_node)
         
-        if len(self.selected_nodes) == 2:
-            dialog = ComponentDialog(self)
+        context_menu.tk_popup(int(event.x), int(event.y))
+
+    def set_node_type(self, node_type):
+        if self.selected_node:
+            self.network_graph.graph.nodes[self.selected_node]['type'] = node_type
+            color = 'red' if node_type == 'inlet' else 'green' if node_type == 'outlet' else 'skyblue'
+            self.network_graph.graph.nodes[self.selected_node]['color'] = color
+            self.network_graph.draw_graph(self)
+
+    def start_connection(self):
+        self.connecting = True
+
+    def complete_connection(self, to_node):
+        if self.connecting and self.selected_node and self.selected_node != to_node:
+            dialog = ComponentDialog(self, "Channel Properties", "Channel", {"diameter": 0.1, "length": 10})
             if dialog.result:
-                self.component_data = dialog.result
                 self.component_counter += 1
-                comp_name = f"{self.component_data['type']} {self.component_counter}"
-                self.network_graph.graph.add_edge(self.selected_nodes[0], self.selected_nodes[1], label=comp_name, **self.component_data)
-                self.network_graph.draw_graph()
+                comp_name = f"Channel {self.component_counter}"
+                self.network_graph.graph.add_edge(self.selected_node, to_node, label=comp_name, type="Channel", properties=dialog.result)
+                self.network_graph.draw_graph(self)
                 self.update_element_lists()
-                self.properties_editor.show_properties(comp_name, self.network_graph.graph.edges[self.selected_nodes[0], self.selected_nodes[1]])
-            
-            self.network_graph.figure.canvas.mpl_disconnect(self.figure_canvas_cid)
-            self.selected_nodes = []
-            self.adding_component = False
-            self.network_graph.graph_canvas.get_tk_widget().config(cursor="")
+        self.connecting = False
+
+    def add_nozzle(self):
+        if self.selected_node:
+            dialog = ComponentDialog(self, "Nozzle Properties", "Nozzle", {"diameter": 0.02})
+            if dialog.result:
+                self.component_counter += 1
+                comp_name = f"Nozzle {self.component_counter}"
+                self.network_graph.graph.nodes[self.selected_node]['nozzle'] = {"label": comp_name, "properties": dialog.result}
+                self.network_graph.graph.nodes[self.selected_node]['color'] = 'purple'
+                self.network_graph.draw_graph(self)
+                self.update_element_lists()
+
+    def delete_node(self):
+        if self.selected_node:
+            self.network_graph.graph.remove_node(self.selected_node)
+            self.selected_node = None
+            self.network_graph.draw_graph(self)
+            self.update_element_lists()
+
+    def start_add_node(self):
+        self.network_graph.graph_canvas.get_tk_widget().config(cursor="crosshair")
+        self.figure_canvas_cid = self.network_graph.figure.canvas.mpl_connect('button_press_event', self.add_node_on_click)
+
+    def add_node_on_click(self, event):
+        x, y = event.xdata, event.ydata
+        if x is None or y is None:
+            return
+        
+        grid_size = self.network_graph.grid_size
+        snapped_x = round(x / grid_size) * grid_size
+        snapped_y = round(y / grid_size) * grid_size
+
+        self.node_counter += 1
+        node_name = f"Node {self.node_counter}"
+        self.network_graph.graph.add_node(node_name, x=snapped_x, y=snapped_y, type='Node', elevation=0.0)
+        self.network_graph.draw_graph(self)
+        self.update_element_lists()
+        
+        self.network_graph.graph_canvas.get_tk_widget().config(cursor="")
+        self.network_graph.figure.canvas.mpl_disconnect(self.figure_canvas_cid)
 
     def update_element_properties(self, element_id, properties):
         if element_id in self.network_graph.graph.nodes:
             for key, value in properties.items():
-                self.network_graph.graph.nodes[element_id][key] = value
+                try:
+                    # Convert to float if possible, otherwise keep as string
+                    self.network_graph.graph.nodes[element_id][key] = float(value)
+                except (ValueError, TypeError):
+                    self.network_graph.graph.nodes[element_id][key] = value
         else:
             for u, v, data in self.network_graph.graph.edges(data=True):
                 if data.get('label') == element_id:
                     for key, value in properties.items():
-                        self.network_graph.graph.edges[u, v][key] = value
+                        try:
+                            self.network_graph.graph.edges[u, v][key] = float(value)
+                        except (ValueError, TypeError):
+                            self.network_graph.graph.edges[u, v][key] = value
                     break
-        self.network_graph.draw_graph()
+        self.network_graph.draw_graph(self)
 
     def create_flow_network(self):
         flow_network = FlowNetwork("GUI Network")
@@ -381,13 +397,11 @@ class App(tk.Tk):
             self.results_text.delete(1.0, tk.END)
             self.results_text.insert(tk.END, results)
             self.results_text.config(state=tk.DISABLED)
-            self.plot_button.config(state=tk.NORMAL)
             
             self.visualize_results()
 
         except Exception as e:
             messagebox.showerror("Simulation Error", f"An error occurred during simulation:\n{e}")
-            self.plot_button.config(state=tk.DISABLED)
 
     def visualize_results(self):
         if not hasattr(self, 'solution_info'):
@@ -406,43 +420,7 @@ class App(tk.Tk):
         node_colors = [cmap(norm_p[node]) for node in self.network_graph.graph.nodes()]
         edge_colors = [cmap(norm_f[data['label']]) for u, v, data in self.network_graph.graph.edges(data=True)]
 
-        self.network_graph.draw_graph(node_colors=node_colors, edge_colors=edge_colors)
-
-    def plot_results(self):
-        if not hasattr(self, 'solution_info'):
-            return
-
-        dialog = PlotOptionsDialog(self)
-        if not dialog.result:
-            return
-
-        plot_type = dialog.result['plot_type']
-        data_to_plot = dialog.result['data_to_plot']
-
-        plot_window = tk.Toplevel(self)
-        plot_window.title("Results Plot")
-        fig, ax = plt.subplots(figsize=(8, 6))
-
-        if data_to_plot == "Pressure":
-            data = self.solution_info['node_pressures']
-            ax.set_ylabel("Pressure (Pa)")
-        else:
-            data = self.connection_flows
-            ax.set_ylabel("Flow Rate (m³/s)")
-
-        names = list(data.keys())
-        values = list(data.values())
-
-        if plot_type == "Bar Chart":
-            ax.bar(names, values)
-        else:
-            ax.plot(names, values)
-
-        ax.set_title(f"{data_to_plot} Plot")
-        plt.tight_layout()
-        canvas = FigureCanvasTkAgg(fig, master=plot_window)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.network_graph.draw_graph(self, node_colors=node_colors, edge_colors=edge_colors)
 
 def main():
     app = App()
