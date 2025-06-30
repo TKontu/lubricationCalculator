@@ -2,6 +2,19 @@
 
 ## High Priority / Next Steps
 
+- **GUI Data Model Refactoring (Robustness):**
+  - [ ] **Phase 1: Core Logic and Data Structure**
+    - [ ] 1.1. In `app.py`, define a constant for the `SINK_NODE` and update the `add_nozzle` method to create a directed edge to this sink node instead of setting a node property.
+    - [ ] 1.2. In `app.py`, modify `create_flow_network` to identify outlet nodes by finding nodes with edges pointing to the `SINK_NODE`.
+    - [ ] 1.3. In `app.py`, update the logic in `create_flow_network` to correctly instantiate `Nozzle` components when an edge connects to the `SINK_NODE`.
+  - [ ] **Phase 2: Visualization**
+    - [ ] 2.1. In `canvas.py`, modify `draw_graph` to exclude the `SINK_NODE` from being rendered on the canvas.
+    - [ ] 2.2. In `canvas.py`, enhance `draw_graph` to render a distinct visual representation for nozzle edges (e.g., a different color or line style) to clearly mark exit points.
+  - [ ] **Phase 3: UI and Cleanup**
+    - [ ] 3.1. In `app.py`, remove the now-redundant "Set as Outlet" option from the node context menu.
+    - [ ] 3.2. In `dialogs.py`, remove the "outlet" option from the "type" combobox in the `PropertiesEditor`.
+    - [ ] 3.3. Thoroughly test the new implementation to ensure creating, connecting, simulating, and visualizing networks with nozzles is robust.
+
 - **Graphical User Interface (GUI) - Polish and Refine:**
   - [ ] **Phase 1: Canvas and Usability**
     - [ ] 1.1. Implement dynamic canvas zooming (e.g., zoom to fit, mouse wheel zoom) and panning to replace the fixed-size canvas.
