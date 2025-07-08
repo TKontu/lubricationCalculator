@@ -2,6 +2,9 @@
 
 ## High Priority / Next Steps
 
+- **Solver Accuracy and Robustness:**
+  - [ ] **Fix Non-Linear Solver:** The iterative solver in `nodal_matrix_solver.py` incorrectly uses total resistance (`R = ΔP / Q`) instead of the physically correct differential resistance (`R = d(ΔP)/dQ`). This leads to slow convergence and potential instability.
+    - [ ] **Action:** Modify the `solve_nodal_iterative` loop to call the `_calculate_component_resistance` function, which correctly computes the differential resistance using a finite-difference method. The existing `_compute_resistance` function should be deprecated or removed.
 - **GUI Data Model Refactoring (Robustness):**
   - [ ] **Phase 1: Core Logic and Data Structure**
     - [ ] 1.1. In `app.py`, define a constant for the `SINK_NODE` and update the `add_nozzle` method to create a directed edge to this sink node instead of setting a node property.
@@ -50,6 +53,13 @@
     - [x] 3.4. Implement color-coding of the graph to visualize simulation results.
 
 ## Medium Priority
+
+- **Improve Connector Physics:**
+  - [ ] The pressure drop calculation in `connector.py` for reducers and expanders may be inaccurate. It currently uses the inlet diameter for velocity calculation in all cases.
+    - [ ] **Action:** Review and correct the `calculate_pressure_drop` method in `connector.py` to use the appropriate diameter (inlet or outlet) for velocity calculation based on the specific connector type (e.g., expansion vs. contraction).
+- **Enhance Flow Initialization:**
+  - [ ] The `_initialize_flows` method in the solver only considers a single sink node when distributing the initial flow. This can lead to a poor initial guess in networks with multiple outlets.
+    - [ ] **Action:** Update the flow initialization logic to properly handle multiple sink nodes, distributing the total flow among all outlets for a more balanced and effective initial state.
 
 ## Low Priority / Future Enhancements
 
