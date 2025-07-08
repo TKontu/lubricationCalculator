@@ -143,6 +143,32 @@ def test_hydrostatic_pressure_calculation_logging(solver, caplog):
 
     assert found_log, "The expected dp_hydro log message was not found."
 
+
+def test_resistance_calculation_methods(solver, fluid_properties):
+    """
+    Tests the difference between average (ΔP/Q) and differential (dΔP/dQ)
+    resistance calculation methods for a non-linear component.
+    """
+    a, b = 1000.0, 500000.0
+    q_test = 0.002  # m³/s
+    comp = QuadraticResistance(a=a, b=b, component_id="NL_resistance_test")
+
+    # 1. Calculate resistance using the old method (_compute_resistance)
+    # This calculates average resistance: R = ΔP/Q = (aQ + bQ²)/Q = a + bQ
+    avg_res_calculated = solver._compute_resistance(comp, q_test, fluid_properties)
+    avg_res_analytical = a + b * q_test
+    assert avg_res_calculated == pytest.approx(avg_res_analytical)
+
+    # 2. Calculate resistance using the new, target method (_calculate_component_resistance)
+    # This calculates differential resistance via central differencing: R = d(ΔP)/dQ
+    diff_res_calculated = solver._calculate_component_resistance(comp, fluid_properties, q_test)
+    # Analytical differential resistance: d(aQ + bQ²)/dQ = a + 2bQ
+    diff_res_analytical = a + 2 * b * q_test
+    assert diff_res_calculated == pytest.approx(diff_res_analytical)
+
+    # 3. Assert that for a non-linear component, the two values are different
+    assert avg_res_calculated != pytest.approx(diff_res_calculated)
+
 def test_nonlinear_resistance_component(solver, fluid_properties):
     """
     Tests if the solver converges to the correct pressure drop for a

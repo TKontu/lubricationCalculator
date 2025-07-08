@@ -5,7 +5,7 @@
 - **Solver Accuracy and Robustness:**
 
   - [ ] **Fix Critical Physics Errors in Solver:** Address fundamental flaws in nodal solver implementation:
-    - [ ] **Hydrostatic Flow Calculation:** Correct flow computation to include hydrostatic effects: `Q = G * [(P_i - P_j) - ρgΔz]` instead of `Q = G * (P_i - P_j)`
+    - [x] **Hydrostatic Flow Calculation:** Correct flow computation to include hydrostatic effects: `Q = G * [(P_i - P_j) - ρgΔz]` instead of `Q = G * (P_i - P_j)`
     - [ ] **Resistance Linearization:** Replace average resistance (ΔP/Q) with differential resistance (dΔP/dQ) using central differencing in all solver iterations
     - [ ] **Pressure-Flow Validation:** Update convergence check to include hydrostatic component in pressure-drop validation
     - [ ] **Initialization Physics:** Replace BFS pathfinding with linearized system solve for flow initialization
