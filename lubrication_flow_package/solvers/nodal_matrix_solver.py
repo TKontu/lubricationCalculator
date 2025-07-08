@@ -357,6 +357,7 @@ class NodalMatrixSolver:
                 z_j = conn.to_node.elevation
                 # hydrostatic Δp = ρ g (z_j - z_i)
                 dp_hydro = fluid_properties['density'] * self.gravity * (z_j - z_i)
+                self.logger.debug(f"Connection {conn.component.id}: dp_hydro = {dp_hydro:.2f} Pa")
 
                 i_is_active = i_full not in sink_indices
                 j_is_active = j_full not in sink_indices
@@ -416,8 +417,13 @@ class NodalMatrixSolver:
                 
                 pressure_from = pressures_full[from_idx]
                 pressure_to = pressures_full[to_idx]
+
+                # Correctly include hydrostatic pressure in the flow calculation
+                z_from = conn.from_node.elevation
+                z_to = conn.to_node.elevation
+                dp_hydro = fluid_properties['density'] * self.gravity * (z_from - z_to)
                 
-                flow = conductance * (pressure_from - pressure_to)
+                flow = conductance * (pressure_from - pressure_to + dp_hydro)
                 new_edge_flows[conn.component.id] = flow
             
             # Step 7: Check convergence

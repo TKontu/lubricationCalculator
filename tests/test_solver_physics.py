@@ -101,6 +101,48 @@ def test_hydrostatic_pressure_simple_vertical_pipe(solver, fluid_properties):
     assert flows[comp.id] == pytest.approx(0.0, abs=1e-9)
     assert actual_dp == pytest.approx(expected_dp_hydro, rel=1e-6)
 
+
+def test_hydrostatic_pressure_calculation_logging(solver, caplog):
+    """
+    Tests that the hydrostatic pressure (dp_hydro) is calculated and logged correctly,
+    as a preliminary step to fixing the flow calculation.
+    """
+    net = FlowNetwork("vertical_pipe_logging")
+    n_bottom = net.create_node(name="bottom", elevation=0.0)
+    n_top = net.create_node(name="top", elevation=5.0) # 5m height difference
+    net.set_inlet(n_bottom)
+    net.add_outlet(n_top)
+    comp = LinearResistance(resistance=1e9, component_id="R_log_test")
+    net.connect_components(n_bottom, n_top, comp)
+
+    fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
+
+    with caplog.at_level("DEBUG"):
+        solver.solve_nodal_iterative(
+            network=net,
+            source_node_id=n_bottom.id,
+            sink_node_ids=[n_top.id],
+            Q_total=0.0,
+            fluid_properties=fluid_properties
+        )
+
+    # Expected hydrostatic pressure: dp = rho * g * (z_j - z_i)
+    # Note: z_j is to_node (top), z_i is from_node (bottom)
+    expected_dp_hydro = DENSITY * GRAVITY * (n_top.elevation - n_bottom.elevation)
+
+    # Check if the log message is present and contains the correct value
+    found_log = False
+    for record in caplog.records:
+        if "dp_hydro" in record.message and "R_log_test" in record.message:
+            found_log = True
+            # Example log: "Connection R_log_test: dp_hydro = 44145.00 Pa"
+            logged_value_str = record.message.split("=")[1].strip().split(" ")[0]
+            logged_value = float(logged_value_str)
+            assert logged_value == pytest.approx(expected_dp_hydro, rel=1e-6)
+            break
+
+    assert found_log, "The expected dp_hydro log message was not found."
+
 def test_nonlinear_resistance_component(solver, fluid_properties):
     """
     Tests if the solver converges to the correct pressure drop for a
