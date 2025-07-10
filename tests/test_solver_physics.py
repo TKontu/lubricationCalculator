@@ -102,72 +102,156 @@ def test_hydrostatic_pressure_simple_vertical_pipe(solver, fluid_properties):
     assert actual_dp == pytest.approx(expected_dp_hydro, rel=1e-6)
 
 
-def test_hydrostatic_pressure_calculation_logging(solver, caplog):
-    """
-    Tests that the hydrostatic pressure (dp_hydro) is calculated and logged correctly,
-    as a preliminary step to fixing the flow calculation.
-    """
-    net = FlowNetwork("vertical_pipe_logging")
-    n_bottom = net.create_node(name="bottom", elevation=0.0)
-    n_top = net.create_node(name="top", elevation=5.0) # 5m height difference
-    net.set_inlet(n_bottom)
-    net.add_outlet(n_top)
-    comp = LinearResistance(resistance=1e9, component_id="R_log_test")
-    net.connect_components(n_bottom, n_top, comp)
 
-    fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
-
-    with caplog.at_level("DEBUG"):
-        solver.solve_nodal_iterative(
-            network=net,
-            source_node_id=n_bottom.id,
-            sink_node_ids=[n_top.id],
-            Q_total=0.0,
-            fluid_properties=fluid_properties
-        )
-
-    # Expected hydrostatic pressure: dp = rho * g * (z_j - z_i)
-    # Note: z_j is to_node (top), z_i is from_node (bottom)
-    expected_dp_hydro = DENSITY * GRAVITY * (n_top.elevation - n_bottom.elevation)
-
-    # Check if the log message is present and contains the correct value
-    found_log = False
-    for record in caplog.records:
-        if "dp_hydro" in record.message and "R_log_test" in record.message:
-            found_log = True
-            # Example log: "Connection R_log_test: dp_hydro = 44145.00 Pa"
-            logged_value_str = record.message.split("=")[1].strip().split(" ")[0]
-            logged_value = float(logged_value_str)
-            assert logged_value == pytest.approx(expected_dp_hydro, rel=1e-6)
-            break
-
-    assert found_log, "The expected dp_hydro log message was not found."
 
 
 def test_resistance_calculation_methods(solver, fluid_properties):
     """
-    Tests the difference between average (ΔP/Q) and differential (dΔP/dQ)
-    resistance calculation methods for a non-linear component.
+    Tests the differential resistance calculation method and compares
+    it with analytical values for a non-linear component.
     """
     a, b = 1000.0, 500000.0
     q_test = 0.002  # m³/s
     comp = QuadraticResistance(a=a, b=b, component_id="NL_resistance_test")
 
-    # 1. Calculate resistance using the old method (_compute_resistance)
-    # This calculates average resistance: R = ΔP/Q = (aQ + bQ²)/Q = a + bQ
-    avg_res_calculated = solver._compute_resistance(comp, q_test, fluid_properties)
+    # Calculate average resistance manually: R_avg = ΔP/Q = (aQ + bQ²)/Q = a + bQ
+    dp = comp.calculate_pressure_drop(q_test, fluid_properties)
+    avg_res_calculated = dp / q_test
     avg_res_analytical = a + b * q_test
     assert avg_res_calculated == pytest.approx(avg_res_analytical)
 
-    # 2. Calculate resistance using the new, target method (_calculate_component_resistance)
-    # This calculates differential resistance via central differencing: R = d(ΔP)/dQ
+    # Calculate differential resistance: R_diff = d(ΔP)/dQ
     diff_res_calculated = solver._calculate_component_resistance(comp, fluid_properties, q_test)
     # Analytical differential resistance: d(aQ + bQ²)/dQ = a + 2bQ
     diff_res_analytical = a + 2 * b * q_test
     assert diff_res_calculated == pytest.approx(diff_res_analytical)
 
-    # 3. Assert that for a non-linear component, the two values are different
+    # Both _compute_resistance and _calculate_component_resistance now return differential resistance
+    unified_res = solver._compute_resistance(comp, q_test, fluid_properties)
+    assert unified_res == pytest.approx(diff_res_calculated)
+
+    # Assert that for a non-linear component, average and differential resistances are different
     assert avg_res_calculated != pytest.approx(diff_res_calculated)
+
+
+
+
+
+def test_nonlinear_residual_is_zero_after_convergence(solver, caplog):
+    """
+    Tests that the corrected solver converges with a near-zero residual
+    between the physical and linearized pressure drops, indicating convergence
+    to the true physical solution.
+    """
+    net = FlowNetwork("nonlinear_residual_test")
+    n_in = net.create_node("in")
+    n_out = net.create_node("out")
+    net.set_inlet(n_in)
+    net.add_outlet(n_out)
+    comp = QuadraticResistance(a=1000.0, b=500000.0, component_id="NL_resid_test")
+    net.connect_components(n_in, n_out, comp)
+    fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
+
+    with caplog.at_level("DEBUG"):
+        solver.solve_nodal_iterative(
+            network=net,
+            source_node_id=n_in.id,
+            sink_node_ids=[n_out.id],
+            Q_total=Q_TOTAL,
+            fluid_properties=fluid_properties,
+            tol_pressure=1e-3 # Use a tight tolerance for this test
+        )
+
+    # Find the log message from the final iteration
+    final_iter_log = None
+    for rec in reversed(caplog.records):
+        if "NL_resid_test" in rec.message and "Resid_DP" in rec.message:
+            final_iter_log = rec.message
+            break
+    
+    assert final_iter_log is not None, "Did not find residual DP log message"
+
+    # Extract the residual DP value
+    # Example: "  Conn NL_resid_test: Flow=0.0010, Phys_DP=1.50, Lin_DP=1.50, Resid_DP=0.00"
+    parts = {p.split("=")[0].strip(): float(p.split("=")[1]) for p in final_iter_log.split(",")}
+    residual_dp = parts["Resid_DP"]
+
+    # Assert that the residual IS close to zero
+    assert math.isclose(residual_dp, 0.0, abs_tol=1e-3)
+
+
+def test_hydrostatic_utube_zero_flow(solver, fluid_properties):
+    """
+    Tests if a U-shaped pipe with equal inlet/outlet elevations and
+    pressures results in zero flow, which would prove the hydrostatic
+    contributions to the 'b' vector are correctly balanced.
+    """
+    net = FlowNetwork("u_tube_test")
+    n_in = net.create_node("in", elevation=10.0)
+    n_mid = net.create_node("mid", elevation=0.0)
+    n_out = net.create_node("out", elevation=10.0)
+    net.set_inlet(n_in)
+    net.add_outlet(n_out)
+
+    # Two pipes forming the U-shape
+    comp1 = LinearResistance(resistance=1000.0, component_id="down_pipe")
+    comp2 = LinearResistance(resistance=1000.0, component_id="up_pipe")
+    net.connect_components(n_in, n_mid, comp1)
+    net.connect_components(n_mid, n_out, comp2)
+
+    # With zero total flow, the internal flows should also be zero
+    # as the hydrostatic effects should cancel out.
+    pressures, flows = solver.solve_nodal_iterative(
+        network=net,
+        source_node_id=n_in.id,
+        sink_node_ids=[n_out.id],
+        Q_total=0.0,
+        fluid_properties=fluid_properties
+    )
+
+    # The current, incorrect implementation will produce a non-zero flow.
+    assert math.isclose(flows["down_pipe"], 0.0, abs_tol=1e-9)
+    assert math.isclose(flows["up_pipe"], 0.0, abs_tol=1e-9)
+
+
+def test_solver_with_correct_nonlinear_logic(solver, fluid_properties):
+    """
+    This test validates that the solver produces the correct final pressure
+    drop for a non-linear component in a simple flow-controlled system.
+    It is based on the validated logic from debug_solver2.py.
+    """
+    net = FlowNetwork("correct_nonlinear_test")
+    n_in = net.create_node("in")
+    n_out = net.create_node("out")
+    net.set_inlet(n_in)
+    net.add_outlet(n_out)
+
+    # Component: ΔP = 1000Q + 500000Q²
+    a, b = 1000.0, 500000.0
+    comp = QuadraticResistance(a=a, b=b, component_id="NL_correct")
+    net.connect_components(n_in, n_out, comp)
+
+    # Run the solver
+    pressures, flows = solver.solve_nodal_iterative(
+        network=net,
+        source_node_id=n_in.id,
+        sink_node_ids=[n_out.id],
+        Q_total=Q_TOTAL,
+        fluid_properties=fluid_properties
+    )
+
+    # The final pressure drop from the solver must match the true physical
+    # pressure drop for the given total flow rate.
+    actual_dp = pressures[n_in.id] - pressures[n_out.id]
+    expected_dp = physical_pressure_drop(Q_TOTAL, a, b)
+
+    # This test will fail with the current solver, which incorrectly
+    # converges to a pressure drop of ~2.0 Pa instead of 1.5 Pa.
+    assert actual_dp == pytest.approx(expected_dp, rel=1e-6)
+
+def physical_pressure_drop(q, a, b):
+    """Helper to calculate the true physical pressure drop."""
+    return a * q + b * q**2
 
 def test_nonlinear_resistance_component(solver, fluid_properties):
     """

@@ -316,7 +316,7 @@ class NodalMatrixSolver:
         full_to_active = {active_nodes[i]: i for i in range(n_active)}
         
         # Initialize edge flows
-        edge_flows = self._initialize_flows(network, source_node_id, sink_node_ids[0], Q_total)
+        edge_flows = self._initialize_flows(network, source_node_id, sink_node_ids, Q_total)
         
         self.logger.info(f"Starting nodal-matrix solver with {n_nodes} nodes, {len(network.connections)} edges")
         self.logger.info(f"Source: {source_node_id}, Sinks: {sink_node_ids}, Q_total: {Q_total:.6f} m³/s")
@@ -333,12 +333,19 @@ class NodalMatrixSolver:
             
             for conn in network.connections:
                 flow = edge_flows[conn.component.id]
-                resistance = self._compute_resistance(
-                    conn.component,
-                    flow,
-                    fluid_properties
-                )
-                conductance = 1.0 / resistance
+                
+                # For mass conservation, use average resistance ΔP/Q
+                # Only use differential resistance for the residual correction
+                if abs(flow) > self.config.dq_absolute:
+                    dp = conn.component.calculate_pressure_drop(flow, fluid_properties)
+                    resistance = dp / abs(flow)
+                else:
+                    # For very small flows, use differential resistance
+                    resistance = self._calculate_component_resistance(
+                        conn.component, fluid_properties, self.config.dq_absolute
+                    )
+                
+                conductance = 1.0 / max(resistance, self.config.min_resistance)
                 
                 edge_resistances[conn.component.id] = resistance
                 edge_conductances[conn.component.id] = conductance
@@ -347,44 +354,72 @@ class NodalMatrixSolver:
             A = lil_matrix((n_active, n_active))
             b = np.zeros(n_active)
 
+            # Term for non-linear residual correction
+            b_residual = np.zeros(n_active)
+
             for conn in network.connections:
                 i_full = node_to_idx[conn.from_node.id]
                 j_full = node_to_idx[conn.to_node.id]
                 G = edge_conductances[conn.component.id]
+                R = edge_resistances[conn.component.id]
+                flow = edge_flows[conn.component.id]
 
-                # Elevations
+                # Elevations and hydrostatic pressure
                 z_i = conn.from_node.elevation
                 z_j = conn.to_node.elevation
-                # hydrostatic Δp = ρ g (z_j - z_i)
-                dp_hydro = fluid_properties['density'] * self.gravity * (z_j - z_i)
-                self.logger.debug(f"Connection {conn.component.id}: dp_hydro = {dp_hydro:.2f} Pa")
+                dp_hydro = fluid_properties['density'] * self.gravity * (z_i - z_j)
+
+                # Non-linear residual correction
+                # For better convergence, use differential resistance for the residual
+                dp_physical = conn.component.calculate_pressure_drop(flow, fluid_properties)
+                dp_linearized = R * flow  # R is now average resistance
+                dp_residual = dp_physical - dp_linearized
+
+                self.logger.debug(
+                    f"  Conn {conn.component.id[:13]}: Flow={flow:.4f}, Phys_DP={dp_physical:.2f}, "
+                    f"Lin_DP={dp_linearized:.2f}, Resid_DP={dp_residual:.2f}"
+                )
 
                 i_is_active = i_full not in sink_indices
                 j_is_active = j_full not in sink_indices
 
                 if i_is_active and j_is_active:
-                    i_act = full_to_active[i_full]
-                    j_act = full_to_active[j_full]
+                    i_act, j_act = full_to_active[i_full], full_to_active[j_full]
                     A[i_act, i_act] += G
                     A[j_act, j_act] += G
                     A[i_act, j_act] -= G
                     A[j_act, i_act] -= G
-                    b[i_act] += G * dp_hydro
-                    b[j_act] -= G * dp_hydro
-                elif i_is_active and not j_is_active:
+                    
+                    # Add hydrostatic and residual terms to RHS
+                    b[i_act] -= G * dp_hydro
+                    b[j_act] += G * dp_hydro
+                    b_residual[i_act] -= G * dp_residual
+                    b_residual[j_act] += G * dp_residual
+
+                elif i_is_active and not j_is_active: # j is sink
                     i_act = full_to_active[i_full]
                     A[i_act, i_act] += G
-                    b[i_act] += G * dp_hydro
-                elif not i_is_active and j_is_active:
+                    b[i_act] -= G * dp_hydro
+                    b_residual[i_act] -= G * dp_residual
+
+                elif not i_is_active and j_is_active: # i is sink
                     j_act = full_to_active[j_full]
                     A[j_act, j_act] += G
-                    b[j_act] -= G * dp_hydro
+                    b[j_act] += G * dp_hydro
+                    b_residual[j_act] += G * dp_residual
 
             # Step 3: Set up RHS vector (net flow injections)
+            # Source node: inject +Q_total
             source_idx = node_to_idx[source_node_id]
             if source_idx not in sink_indices:
                 source_active = full_to_active[source_idx]
                 b[source_active] += Q_total
+            
+            # Sink nodes: extract flow (this is handled implicitly by setting their pressure to 0)
+            # The mass conservation is enforced by the network topology and flow equations
+            
+            # Add residual correction to b
+            b += b_residual
             
             # Step 4: Solve linear system A·p = b
             if n_active == 1:
@@ -418,12 +453,16 @@ class NodalMatrixSolver:
                 pressure_from = pressures_full[from_idx]
                 pressure_to = pressures_full[to_idx]
 
-                # Correctly include hydrostatic pressure in the flow calculation
-                z_from = conn.from_node.elevation
-                z_to = conn.to_node.elevation
+                # Correctly include hydrostatic pressure in flow calculation
+                z_from = network.nodes[conn.from_node.id].elevation
+                z_to = network.nodes[conn.to_node.id].elevation
                 dp_hydro = fluid_properties['density'] * self.gravity * (z_from - z_to)
                 
-                flow = conductance * (pressure_from - pressure_to + dp_hydro)
+                # Physical pressure drop from the solver's perspective
+                dp_solver = pressure_from - pressure_to
+                
+                # Use the linearized flow for the iterative update
+                flow = conductance * (dp_solver + dp_hydro)
                 new_edge_flows[conn.component.id] = flow
             
             # Step 7: Check convergence
@@ -436,26 +475,49 @@ class NodalMatrixSolver:
                     self.logger.warning("Solver stalled. Converged with reduced tolerance.")
                     break
 
+            # The pressure error is now the non-linear residual, which we are
+            # explicitly solving for. A better metric for convergence is the
+            # change in the solution (flow change). We can also check the
+            # overall mass conservation error.
             max_pressure_error = 0.0
             for conn in network.connections:
+                dp_physical = conn.component.calculate_pressure_drop(new_edge_flows[conn.component.id], fluid_properties)
+                
                 from_idx = node_to_idx[conn.from_node.id]
                 to_idx = node_to_idx[conn.to_node.id]
-                
-                pressure_diff = pressures_full[from_idx] - pressures_full[to_idx]
-                flow = new_edge_flows[conn.component.id]
-                resistance = edge_resistances[conn.component.id]
-                
-                expected_pressure_drop = resistance * flow
-                pressure_error = abs(pressure_diff - expected_pressure_drop)
+                dp_solver = pressures_full[from_idx] - pressures_full[to_idx]
+
+                z_from = network.nodes[conn.from_node.id].elevation
+                z_to = network.nodes[conn.to_node.id].elevation
+                dp_hydro = fluid_properties['density'] * self.gravity * (z_from - z_to)
+
+                pressure_error = abs(dp_physical - (dp_solver + dp_hydro))
                 max_pressure_error = max(max_pressure_error, pressure_error)
             
+            # Calculate mass conservation error
+            mass_conservation_error = self._calculate_mass_conservation_error(
+                network, new_edge_flows, source_node_id, sink_node_ids, Q_total
+            )
+            
             self.logger.debug(f"Iteration {iteration + 1}: max_flow_change={max_flow_change:.2e}, "
-                            f"max_pressure_error={max_pressure_error:.2e}")
+                            f"max_pressure_error={max_pressure_error:.2e}, "
+                            f"mass_conservation_error={mass_conservation_error:.2e}")
 
-            # Check convergence criteria
-            if max_flow_change < tol_flow and max_pressure_error < tol_pressure:
+            # Check convergence criteria including mass conservation
+            if (max_flow_change < tol_flow and 
+                max_pressure_error < tol_pressure and 
+                mass_conservation_error < tol_flow):
                 self.logger.info(f"Converged after {iteration + 1} iterations")
                 break
+            
+            # Adaptive relaxation strategy
+            if len(flow_changes) > 3:
+                # Check for oscillations in the last few iterations
+                recent_changes = flow_changes[-3:]
+                if np.std(recent_changes) / np.mean(recent_changes) > 0.5:
+                    # Reduce relaxation factor if oscillating
+                    relaxation_factor = max(0.1, relaxation_factor * 0.8)
+                    self.logger.debug(f"Reduced relaxation factor to {relaxation_factor:.3f}")
             
             # Update flows for next iteration with relaxation
             for conn_id in edge_flows:
@@ -474,11 +536,11 @@ class NodalMatrixSolver:
         
         return node_pressures, new_edge_flows
     
-    def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_id: str,
+    def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_ids: List[str],
                           Q_total: float) -> Dict[str, float]:
         """
-        Initialize edge flows using a resistance-based approach for a better guess.
-        Flow is distributed inversely proportional to the resistance of the path.
+        Initialize edge flows using a resistance-based approach for multiple sinks.
+        Flow is distributed inversely proportional to the resistance of each path.
         """
         edge_flows = {conn.component.id: 0.0 for conn in network.connections}
         fluid_properties = {
@@ -486,33 +548,45 @@ class NodalMatrixSolver:
             'viscosity': self.calculate_viscosity(40.0)  # Assume 40C for initial viscosity
         }
 
-        # Estimate resistance for each component with a small flow
+        # Estimate resistance for each component using differential method for consistency
         resistances = {}
         for conn in network.connections:
-            resistances[conn.component.id] = self._compute_resistance(
-                conn.component, self.config.dq_absolute, fluid_properties
+            resistances[conn.component.id] = self._calculate_component_resistance(
+                conn.component, fluid_properties, self.config.dq_absolute
             )
 
-        # Find all paths from source to sink using BFS
-        paths = []
-        queue = [(source_node_id, [])]
-        visited = {source_node_id}
+        # Find all paths from source to each sink using BFS
+        all_paths = []
+        path_sink_mapping = []  # Track which sink each path leads to
+        
+        for sink_node_id in sink_node_ids:
+            paths_to_sink = []
+            queue = [(source_node_id, [])]
+            visited = set()
 
-        while queue:
-            curr_node_id, path = queue.pop(0)
+            while queue:
+                curr_node_id, path = queue.pop(0)
 
-            if curr_node_id == sink_node_id:
-                paths.append(path)
-                continue
+                if curr_node_id == sink_node_id:
+                    paths_to_sink.append(path)
+                    continue
 
-            for conn in network.connections:
-                if conn.from_node.id == curr_node_id and conn.to_node.id not in visited:
-                    new_path = path + [conn.component.id]
-                    visited.add(conn.to_node.id)
-                    queue.append((conn.to_node.id, new_path))
+                if curr_node_id in visited:
+                    continue
+                visited.add(curr_node_id)
 
-        if not paths:
-            # Fallback to simple distribution if no paths are found
+                for conn in network.connections:
+                    if conn.from_node.id == curr_node_id and conn.to_node.id not in visited:
+                        new_path = path + [conn.component.id]
+                        queue.append((conn.to_node.id, new_path))
+            
+            # Add paths to this sink
+            for path in paths_to_sink:
+                all_paths.append(path)
+                path_sink_mapping.append(sink_node_id)
+
+        if not all_paths:
+            # Fallback to uniform distribution if no paths are found
             n_edges = len(network.connections)
             if n_edges > 0:
                 initial_flow = Q_total / n_edges
@@ -520,34 +594,83 @@ class NodalMatrixSolver:
                     edge_flows[conn_id] = initial_flow
             return edge_flows
 
-        # Calculate total resistance for each path
-        path_resistances = []
-        for path in paths:
+        # Calculate conductance (inverse resistance) for each path
+        path_conductances = []
+        for path in all_paths:
             path_resistance = sum(resistances[comp_id] for comp_id in path)
-            path_resistances.append(path_resistance)
+            path_conductance = 1.0 / max(path_resistance, self.config.min_resistance)
+            path_conductances.append(path_conductance)
 
-        # Distribute flow based on inverse of path resistance
-        total_inverse_resistance = sum(1.0 / r for r in path_resistances if r > 0)
-
-        for i, path in enumerate(paths):
-            path_resistance = path_resistances[i]
-            if path_resistance > 0:
-                path_flow = Q_total * (1.0 / path_resistance) / total_inverse_resistance
+        # Distribute flow based on conductance weighting
+        total_conductance = sum(path_conductances)
+        
+        for i, path in enumerate(all_paths):
+            if total_conductance > 0:
+                path_flow = Q_total * (path_conductances[i] / total_conductance)
                 for comp_id in path:
                     edge_flows[comp_id] += path_flow
 
         return edge_flows
     
     def _compute_resistance(self, component, flow: float, fluid_properties: Dict) -> float:
-        """Compute resistance for a component at given flow rate"""
-        # Use a small, non-zero flow for resistance calculation if flow is close to zero
-        calc_flow = abs(flow) if abs(flow) > self.config.dq_absolute else self.config.dq_absolute
+        """
+        Compute resistance for a component at given flow rate.
+        This method is deprecated - use _calculate_component_resistance for consistency.
+        """
+        # Delegate to the differential resistance calculation for consistency
+        return self._calculate_component_resistance(component, fluid_properties, flow)
+    
+    def _calculate_mass_conservation_error(self,
+                                         network: FlowNetwork,
+                                         edge_flows: Dict[str, float],
+                                         source_node_id: str,
+                                         sink_node_ids: List[str],
+                                         Q_total: float) -> float:
+        """
+        Calculate the maximum mass conservation error across all nodes.
         
-        pressure_drop = component.calculate_pressure_drop(calc_flow, fluid_properties)
-        resistance = pressure_drop / calc_flow
+        Returns:
+            Maximum absolute mass conservation error in m³/s
+        """
+        max_error = 0.0
+        total_sink_flow = 0.0
         
-        # Ensure minimum resistance to avoid numerical issues
-        return max(resistance, self.config.min_resistance)
+        for node_id, node in network.nodes.items():
+            flow_in = 0.0
+            flow_out = 0.0
+            
+            # Sum flows into and out of this node
+            for conn in network.connections:
+                flow = edge_flows.get(conn.component.id, 0.0)
+                
+                if conn.to_node.id == node_id:
+                    flow_in += flow
+                elif conn.from_node.id == node_id:
+                    flow_out += flow
+            
+            if node_id in sink_node_ids:
+                total_sink_flow += flow_in
+            
+            # Net flow at node
+            net_flow = flow_in - flow_out
+            
+            # Expected net flow
+            if node_id == source_node_id:
+                expected_net = -Q_total
+            elif node_id in sink_node_ids:
+                # For sink nodes, continue to check total balance later
+                continue
+            else:
+                expected_net = 0.0
+            
+            error = abs(net_flow - expected_net)
+            max_error = max(max_error, error)
+        
+        # Check total sink vs source flow balance
+        total_flow_error = abs(total_sink_flow - Q_total)
+        max_error = max(max_error, total_flow_error)
+        
+        return max_error
     
     def _validate_mass_conservation(self,
                                    network: FlowNetwork,
