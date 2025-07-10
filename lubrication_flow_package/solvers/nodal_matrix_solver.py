@@ -334,13 +334,13 @@ class NodalMatrixSolver:
             for conn in network.connections:
                 flow = edge_flows[conn.component.id]
                 
-                # For mass conservation, use average resistance ΔP/Q
-                # Only use differential resistance for the residual correction
+                # For nodal pressure-based methods, use average resistance for conductance
+                # This ensures mass conservation: when Q = G*(P1-P2), total flows balance
                 if abs(flow) > self.config.dq_absolute:
                     dp = conn.component.calculate_pressure_drop(flow, fluid_properties)
-                    resistance = dp / abs(flow)
+                    resistance = dp / abs(flow)  # Average resistance
                 else:
-                    # For very small flows, use differential resistance
+                    # For very small flows, use differential resistance as approximation
                     resistance = self._calculate_component_resistance(
                         conn.component, fluid_properties, self.config.dq_absolute
                     )
@@ -370,10 +370,11 @@ class NodalMatrixSolver:
                 dp_hydro = fluid_properties['density'] * self.gravity * (z_i - z_j)
 
                 # Non-linear residual correction
-                # For better convergence, use differential resistance for the residual
+                # Since we use average resistance in conductance matrix, residual should be zero
+                # But we include it for numerical stability and future enhancements
                 dp_physical = conn.component.calculate_pressure_drop(flow, fluid_properties)
-                dp_linearized = R * flow  # R is now average resistance
-                dp_residual = dp_physical - dp_linearized
+                dp_linearized = R * flow  # R is average resistance
+                dp_residual = dp_physical - dp_linearized  # Should be ~0 for average resistance
 
                 self.logger.debug(
                     f"  Conn {conn.component.id[:13]}: Flow={flow:.4f}, Phys_DP={dp_physical:.2f}, "
