@@ -10,12 +10,14 @@ from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 class TestFlowInitialization:
     
     def setup_method(self):
         """Set up solver for each test"""
-        self.solver = NodalMatrixSolver(oil_density=900.0, oil_type="SAE30")
+        sim_config = SimulationConfig(total_flow_rate=0.001, oil_density=900.0, oil_type="SAE30", temperature=40, inlet_pressure=101325)
+        self.solver = NodalMatrixSolver(sim_config)
         self.solver.calculate_viscosity = lambda T: 1e-3  # Fixed viscosity
         self.Q_total = 0.001  # 1 L/s total flow
     
@@ -280,7 +282,8 @@ def test_pathfinding_algorithm_directly():
     net.connect_components(junction, sink1, branch1)
     net.connect_components(junction, sink2, branch2)
     
-    solver = NodalMatrixSolver()
+    sim_config = SimulationConfig(total_flow_rate=0.1, oil_density=850, oil_type="SAE30", temperature=40, inlet_pressure=101325)
+    solver = NodalMatrixSolver(sim_config)
     
     # Test current path-finding logic manually
     all_paths = []

@@ -1,17 +1,10 @@
+
 """
 Unified Nodal-Matrix Solver for Hydraulic Networks with Non-linear Edge Resistances
 
 This module implements the canonical nodal-matrix solver for the project that finds node pressures 
 and edge flows such that mass is conserved and the pressure-flow law ΔP_e = R_e(Q_e) · Q_e holds 
 on every edge.
-
-The solver uses the nodal analysis method where:
-1. Each node has a unique pressure (except reference node)
-2. Conductance matrix A is built from edge conductances G_e = 1/R_e(Q_e)
-3. System A·p = b is solved iteratively as conductances depend on flows
-4. Flows are computed from pressure differences and conductances
-
-This is the unified implementation that consolidates all nodal solving functionality.
 """
 
 import copy
@@ -28,9 +21,11 @@ from ..network.flow_network import FlowNetwork
 from ..network.node import Node
 from ..network.connection import Connection
 from .config import SolverConfig
+from ..config.simulation_config import SimulationConfig
+from .base import SolverBase
 
 
-class NodalMatrixSolver:
+class NodalMatrixSolver(SolverBase):
     """
     Unified nodal-matrix solver for hydraulic networks with non-linear resistances.
     
@@ -41,39 +36,43 @@ class NodalMatrixSolver:
     This is the canonical nodal solver for the project, consolidating all nodal solving functionality.
     """
     
-    def __init__(self, config: Optional[SolverConfig] = None,
-                 config_file: Optional[str] = None,
-                 oil_density: float = 900.0,
-                 oil_type: str = "SAE30",
-                 viscosity_model: Optional[str] = None,
-                 viscosity_parameters: Optional[Dict[str, float]] = None,
+    def __init__(self, sim_config: SimulationConfig, 
+                 solver_config: Optional[SolverConfig] = None,
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the nodal matrix solver.
         
         Args:
-            config: Solver configuration object (takes precedence over config_file)
-            config_file: Path to a YAML file with solver configuration
-            oil_density: Oil density in kg/m³
-            oil_type: Oil type for viscosity calculation
-            viscosity_model: The viscosity model to use
-            viscosity_parameters: The parameters for the viscosity model
-            logger: Optional logger for debugging output
+            sim_config: The simulation configuration object.
+            solver_config: Optional solver configuration object.
+            logger: Optional logger for debugging output.
         """
-        if config:
-            self.config = config
-        elif config_file:
-            self.config = SolverConfig.from_yaml(config_file)
-        else:
-            self.config = SolverConfig()
-            
-        self.oil_density = oil_density
-        self.oil_type = oil_type
-        self.viscosity_model = viscosity_model
-        self.viscosity_parameters = viscosity_parameters
+        super().__init__(sim_config, solver_config)
+        self.oil_density = sim_config.oil_density
+        self.oil_type = sim_config.oil_type
+        self.viscosity_model = sim_config.viscosity_model
+        self.viscosity_parameters = sim_config.viscosity_parameters
         self.gravity = 9.81
         self.logger = logger or logging.getLogger(__name__)
-    
+
+    def solve(self, network: FlowNetwork) -> Dict:
+        """
+        Public solve method that conforms to the SolverBase interface.
+        """
+        connection_flows, solution_info = self._solve_nodal_network_with_pump_physics(
+            network,
+            pump_flow_rate=self.sim_config.total_flow_rate,
+            temperature=self.sim_config.temperature,
+            pump_max_pressure=self.sim_config.inlet_pressure,
+            outlet_pressure=self.sim_config.outlet_pressure or 101325.0,
+            max_iterations=self.config.max_iterations,
+            tolerance=self.config.tolerance
+        )
+        
+        # Adapt the old solution_info to the new standard format
+        solution_info['component_flows'] = connection_flows
+        return solution_info
+
     def calculate_viscosity(self, temperature: float) -> float:
         """Calculate dynamic viscosity using Vogel equation"""
         T = temperature + 273.15
@@ -104,7 +103,7 @@ class NodalMatrixSolver:
         viscosity = params["A"] * math.exp(params["B"] / (T - params["C"]))
         return max(1e-6, min(viscosity, 10.0))
 
-    def solve_nodal_network(
+    def _solve_nodal_network(
             self,
             network: FlowNetwork,
             total_flow_rate: float,
@@ -145,7 +144,7 @@ class NodalMatrixSolver:
                 raise ValueError("Network must have at least one outlet node")
 
             # 5. Call iterative solver
-            node_pressures, edge_flows = self.solve_nodal_iterative(
+            node_pressures, edge_flows = self._solve_nodal_iterative(
                 network=network,
                 source_node_id=inlet_node.id,
                 sink_node_ids=[o.id for o in outlet_nodes],
@@ -187,14 +186,7 @@ class NodalMatrixSolver:
 
             return edge_flows, solution_info
 
-     
-
-    
-
-
-    
-
-    def solve_nodal_network_with_pump_physics(
+    def _solve_nodal_network_with_pump_physics(
         self,
         network: FlowNetwork,
         pump_flow_rate: float,
@@ -214,7 +206,7 @@ class NodalMatrixSolver:
             raise ValueError(f"Invalid network: {errs}")
 
         # 2) Delegate to the existing fixed‐Q nodal solver
-        flows, sol = self.solve_nodal_network(
+        flows, sol = self._solve_nodal_network(
             network=network,
             total_flow_rate=pump_flow_rate,
             temperature=temperature,
@@ -262,7 +254,7 @@ class NodalMatrixSolver:
         # floor
         return max(R, self.config.min_resistance)
     
-    def solve_nodal_iterative(self,
+    def _solve_nodal_iterative(self,
                              network: FlowNetwork,
                              source_node_id: str,
                              sink_node_ids: List[str],
@@ -738,8 +730,7 @@ class NodalMatrixSolver:
                               f"  Error: {error:.6f}")
                 
 
-    def print_results(self, network: FlowNetwork, connection_flows: Dict[str, float],
-                     solution_info: Dict, pressure_unit: str = 'kPa', flow_rate_unit: str = 'L/s'):
+    def print_results(self, network: FlowNetwork, solution: Dict, pressure_unit: str = 'kPa', flow_rate_unit: str = 'L/s'):
         """Print detailed results in a structured and clear format."""
         
         def convert_pressure(p_pa, unit):
@@ -754,6 +745,9 @@ class NodalMatrixSolver:
 
         p_unit_str = pressure_unit
         q_unit_str = flow_rate_unit
+        
+        connection_flows = solution.get('component_flows', {})
+        solution_info = solution # In the new interface, the whole dict is the solution info
 
         print(f"\n{'='*80}")
         print(f"NETWORK FLOW SIMULATION RESULTS")

@@ -5,10 +5,12 @@ from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.components.nozzle import Nozzle, NozzleType
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 @pytest.fixture
 def solver():
-    return NodalMatrixSolver()
+    sim_config = SimulationConfig(total_flow_rate=0.1, oil_density=850, oil_type="SAE30", temperature=40, inlet_pressure=101325)
+    return NodalMatrixSolver(sim_config)
 
 # -----------------------------------------------------------------------------
 # Case 1: Single 12 mm×1 m pipe → 2 mm sharp-edged nozzle @ 10 L/min
@@ -38,13 +40,12 @@ def test_single_pipe_nozzle_flow_driven(solver):
     net.connect_components(n_mid, n_out, nozzle)
 
     # Solve fixing the flow
-    flows, info = solver.solve_nodal_network_with_pump_physics(
-        network=net,
-        pump_flow_rate=Q,
-        temperature=T,
-        pump_max_pressure=5e6,   # sufficiently high bound
-        outlet_pressure=p_out
-    )
+    solver.sim_config.total_flow_rate = Q
+    solver.sim_config.temperature = T
+    solver.sim_config.inlet_pressure = 5e6
+    solver.sim_config.outlet_pressure = p_out
+    info = solver.solve(net)
+    flows = info.get("component_flows", {})
 
     # 1) Check mass conservation
     assert pytest.approx(info["total_flow_rate"], rel=1e-4) == Q
@@ -92,13 +93,12 @@ def test_t_split_flow_driven(solver):
     net.connect_components(n_b2,   n_out2, nozzle2)
 
     # Solve fixing the total flow
-    flows, info = solver.solve_nodal_network_with_pump_physics(
-        network=net,
-        pump_flow_rate=Q_tot,
-        temperature=T,
-        pump_max_pressure=5e6,
-        outlet_pressure=p_out
-    )
+    solver.sim_config.total_flow_rate = Q_tot
+    solver.sim_config.temperature = T
+    solver.sim_config.inlet_pressure = 5e6
+    solver.sim_config.outlet_pressure = p_out
+    info = solver.solve(net)
+    flows = info.get("component_flows", {})
 
     # 1) Total flow delivered
     assert pytest.approx(info["total_flow_rate"], rel=1e-4) == Q_tot

@@ -5,6 +5,7 @@ from lubrication_flow_package.components.connector import Connector
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
 from lubrication_flow_package.solvers.config import SolverConfig
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 # Helper to create a simple two-node one-channel network
 def create_two_node_network(pressure_A, pressure_B, conductance):
@@ -31,7 +32,8 @@ def create_two_node_network(pressure_A, pressure_B, conductance):
 # Fixtures for re-use
 @pytest.fixture
 def solver():
-    return NodalMatrixSolver()
+    sim_config = SimulationConfig(total_flow_rate=0.1, oil_density=850, oil_type="SAE30", temperature=40, inlet_pressure=101325)
+    return NodalMatrixSolver(sim_config)
 
 @pytest.fixture
 def fluid_properties():
@@ -39,25 +41,21 @@ def fluid_properties():
 
 def test_flat_network_flow_conservation(solver, fluid_properties):
     network, comp_id = create_two_node_network(200000, 190000, conductance=2.0)
-    flow, info = solver.solve_nodal_network(
-        network,
-        total_flow_rate=0.005,
-        temperature=40.0,
-        inlet_pressure=200000,
-        outlet_pressure=190000
-    )
+    solver.sim_config.total_flow_rate = 0.005
+    solver.sim_config.inlet_pressure = 200000
+    solver.sim_config.outlet_pressure = 190000
+    solution = solver.solve(network)
+    flow = solution.get("component_flows", {})
     assert comp_id in flow
     assert pytest.approx(flow[comp_id], rel=1e-3) == 0.005
 
 def test_zero_flow_when_no_pressure_difference(solver, fluid_properties):
     network, comp_id = create_two_node_network(100000, 100000, conductance=5.0)
-    flow, info = solver.solve_nodal_network(
-        network,
-        total_flow_rate=0.0,
-        temperature=40.0,
-        inlet_pressure=100000,
-        outlet_pressure=100000
-    )
+    solver.sim_config.total_flow_rate = 0.0
+    solver.sim_config.inlet_pressure = 100000
+    solver.sim_config.outlet_pressure = 100000
+    solution = solver.solve(network)
+    flow = solution.get("component_flows", {})
     assert comp_id in flow
     assert abs(flow[comp_id]) < 1e-8
 
@@ -76,13 +74,11 @@ def test_inclined_network_hydrostatic_adjustment(solver, fluid_properties):
 
     network.connect_components(node_A, node_B, channel)
 
-    flow, info = solver.solve_nodal_network(
-        network,
-        total_flow_rate=0.002,
-        temperature=40.0,
-        inlet_pressure=200000,
-        outlet_pressure=101325
-    )
+    solver.sim_config.total_flow_rate = 0.002
+    solver.sim_config.inlet_pressure = 200000
+    solver.sim_config.outlet_pressure = 101325
+    solution = solver.solve(network)
+    info = solution
 
     # Pressure diff from ρgΔz = 900 * 9.81 * 2 = 17658 Pa
     dp_expected = 17658 + channel.calculate_pressure_drop(0.002, fluid_properties)

@@ -4,11 +4,13 @@ import math
 import pytest
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 FLUID = {'density': 1000.0, 'viscosity': 1e-3}
 D, L = 0.01, 1.0
 ch = Channel(diameter=D, length=L, name="test")
-solver = NodalMatrixSolver(oil_density=FLUID['density'], oil_type="Custom")
+sim_config = SimulationConfig(oil_density=FLUID['density'], oil_type="Custom", temperature=40, total_flow_rate=0, inlet_pressure=0)
+solver = NodalMatrixSolver(sim_config)
 solver.calculate_viscosity = lambda T: FLUID['viscosity']
 
 def test_laminar_resistance():

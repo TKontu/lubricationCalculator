@@ -15,9 +15,10 @@ from typing import Dict, List, Tuple, Optional
 from ..config.simulation_config import SimulationConfig
 from ..network.flow_network import FlowNetwork
 from .config import SolverConfig
+from .base import SolverBase
 
 
-class RobustNonLinearSolver:
+class RobustNonLinearSolver(SolverBase):
     """
     A robust, non-linear hydraulic network solver using the Newton-Raphson method.
 
@@ -26,7 +27,7 @@ class RobustNonLinearSolver:
     of equations that describe the network's physics.
     """
 
-    def __init__(self, sim_config: SimulationConfig, config: Optional[SolverConfig] = None):
+    def __init__(self, sim_config: SimulationConfig, solver_config: Optional[SolverConfig] = None):
         """
         Initializes the RobustNonLinearSolver.
 
@@ -34,20 +35,10 @@ class RobustNonLinearSolver:
             sim_config: The simulation configuration object.
             config: A SolverConfig object containing solver parameters.
         """
-        self.sim_config = sim_config
-        self.config = config if config else SolverConfig()
+        super().__init__(sim_config, solver_config)
         self.convergence_config = self.config.convergence
         self.line_search_config = self.config.line_search
         self.jacobian_config = self.config.jacobian
-        self.fluid_properties = self._get_fluid_properties()
-
-    def _get_fluid_properties(self) -> Dict:
-        """Computes and returns the fluid properties."""
-        # This can be expanded to use the viscosity models from the old solver
-        return {
-            'density': self.sim_config.oil_density,
-            'viscosity': 0.01 # Placeholder for now
-        }
 
     def solve(self, network: FlowNetwork) -> Dict:
         """
@@ -66,9 +57,13 @@ class RobustNonLinearSolver:
 
         # 2. Find fundamental cycles for pressure equations
         cycles = self._find_fundamental_cycles(network)
+        
+        converged = False
+        iterations = 0
 
         # 3. Start Newton-Raphson iteration
         for i in range(self.config.max_iterations):
+            iterations = i + 1
             # 4. Evaluate the residual F(Q)
             residual = self._evaluate_residual(q_current, network, cycles)
 
@@ -81,6 +76,7 @@ class RobustNonLinearSolver:
             # 7. Check for convergence
             if self._check_convergence(residual, delta_q, q_current):
                 print(f"Converged after {i} iterations.")
+                converged = True
                 break
 
             # 8. Update the solution with line search
@@ -90,7 +86,7 @@ class RobustNonLinearSolver:
             print("Solver did not converge within the maximum number of iterations.")
 
         # 9. Post-process results
-        results = self._package_results(q_current, network)
+        results = self._package_results(q_current, network, converged, iterations)
         return results
 
     def _line_search(self, q_current: np.ndarray, delta_q: np.ndarray, residual: np.ndarray, network: FlowNetwork, cycles: List[List[str]]) -> float:
@@ -257,7 +253,7 @@ class RobustNonLinearSolver:
 
         return True
 
-    def _package_results(self, q_vector: np.ndarray, network: FlowNetwork) -> Dict:
+    def _package_results(self, q_vector: np.ndarray, network: FlowNetwork, converged: bool, iterations: int) -> Dict:
         """
         Packages the final flow vector and calculates node pressures.
         """
@@ -268,10 +264,17 @@ class RobustNonLinearSolver:
         inlet_pressure = node_pressures.get(network.inlet_node.id, 0.0)
 
         return {
-            "converged": True, # Placeholder
+            "converged": converged,
+            "iterations": iterations,
             "component_flows": component_flows,
             "node_pressures": node_pressures,
-            "inlet_pressure": inlet_pressure
+            "inlet_pressure": inlet_pressure,
+            "temperature": self.sim_config.temperature,
+            "viscosity": self.fluid_properties['viscosity'],
+            "oil_type": self.sim_config.oil_type,
+            "oil_density": self.sim_config.oil_density,
+            "total_flow_rate": self.sim_config.total_flow_rate,
+            "outlet_pressure": self.sim_config.outlet_pressure or 0.0,
         }
 
     def _calculate_node_pressures(self, component_flows: Dict[str, float], network: FlowNetwork) -> Dict[str, float]:
@@ -310,8 +313,7 @@ class RobustNonLinearSolver:
         
         return node_pressures
 
-    def print_results(self, network: FlowNetwork, connection_flows: Dict[str, float],
-                     solution_info: Dict, pressure_unit: str = 'kPa', flow_rate_unit: str = 'L/s'):
+    def print_results(self, network: FlowNetwork, solution: Dict, pressure_unit: str = 'kPa', flow_rate_unit: str = 'L/s'):
         """Print detailed results in a structured and clear format."""
         
         def convert_pressure(p_pa, unit):
@@ -326,6 +328,9 @@ class RobustNonLinearSolver:
 
         p_unit_str = pressure_unit
         q_unit_str = flow_rate_unit
+        
+        connection_flows = solution.get("component_flows", {})
+        solution_info = solution
 
         print(f"\n{'='*80}")
         print(f"NETWORK FLOW SIMULATION RESULTS (RobustNonLinearSolver)")

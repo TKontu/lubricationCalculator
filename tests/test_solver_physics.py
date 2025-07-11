@@ -17,6 +17,7 @@ from lubrication_flow_package.components.base import FlowComponent
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 # --- Constants and Fixtures ---
 
@@ -33,7 +34,8 @@ def fluid_properties() -> Dict[str, float]:
 @pytest.fixture
 def solver() -> NodalMatrixSolver:
     """Provides a solver instance with fixed fluid properties."""
-    s = NodalMatrixSolver(oil_density=DENSITY, oil_type="SAE30")
+    sim_config = SimulationConfig(total_flow_rate=Q_TOTAL, oil_density=DENSITY, oil_type="SAE30", temperature=20, inlet_pressure=0)
+    s = NodalMatrixSolver(sim_config)
     s.calculate_viscosity = lambda temp: VISCOSITY
     return s
 
@@ -80,16 +82,11 @@ def test_hydrostatic_pressure_simple_vertical_pipe(solver, fluid_properties):
     comp = LinearResistance(resistance=1e12, component_id="R1")
     net.connect_components(n_bottom, n_top, comp)
 
-    # The `solve_nodal_iterative` is used here to isolate the core physics calculation
-    # from other parts of the `solve_nodal_network` wrapper.
     # We set Q_total to 0 to focus purely on the static pressure.
-    pressures, flows = solver.solve_nodal_iterative(
-        network=net,
-        source_node_id=n_bottom.id,
-        sink_node_ids=[n_top.id],
-        Q_total=0.0,
-        fluid_properties=fluid_properties
-    )
+    solver.sim_config.total_flow_rate = 0.0
+    solution = solver.solve(net)
+    pressures = solution.get("node_pressures", {})
+    flows = solution.get("component_flows", {})
 
     # Analytical hydrostatic pressure difference
     expected_dp_hydro = DENSITY * GRAVITY * (n_top.elevation - n_bottom.elevation)
@@ -100,7 +97,6 @@ def test_hydrostatic_pressure_simple_vertical_pipe(solver, fluid_properties):
 
     assert flows[comp.id] == pytest.approx(0.0, abs=1e-9)
     assert actual_dp == pytest.approx(expected_dp_hydro, rel=1e-6)
-
 
 
 
@@ -136,7 +132,6 @@ def test_resistance_calculation_methods(solver, fluid_properties):
 
 
 
-
 def test_nonlinear_residual_is_zero_after_convergence(solver, caplog):
     """
     Tests that the corrected solver converges with a near-zero residual
@@ -153,14 +148,7 @@ def test_nonlinear_residual_is_zero_after_convergence(solver, caplog):
     fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
 
     with caplog.at_level("DEBUG"):
-        solver.solve_nodal_iterative(
-            network=net,
-            source_node_id=n_in.id,
-            sink_node_ids=[n_out.id],
-            Q_total=Q_TOTAL,
-            fluid_properties=fluid_properties,
-            tol_pressure=1e-3 # Use a tight tolerance for this test
-        )
+        solver.solve(net)
 
     # Find the log message from the final iteration
     final_iter_log = None
@@ -173,7 +161,7 @@ def test_nonlinear_residual_is_zero_after_convergence(solver, caplog):
 
     # Extract the residual DP value
     # Example: "  Conn NL_resid_test: Flow=0.0010, Phys_DP=1.50, Lin_DP=1.50, Resid_DP=0.00"
-    parts = {p.split("=")[0].strip(): float(p.split("=")[1]) for p in final_iter_log.split(",")}
+    parts = {p.split("=")[0].strip(): float(p.split("=")[1]) for p in final_iter_log.split(",") if "=" in p}
     residual_dp = parts["Resid_DP"]
 
     # Assert that the residual IS close to zero
@@ -201,13 +189,9 @@ def test_hydrostatic_utube_zero_flow(solver, fluid_properties):
 
     # With zero total flow, the internal flows should also be zero
     # as the hydrostatic effects should cancel out.
-    pressures, flows = solver.solve_nodal_iterative(
-        network=net,
-        source_node_id=n_in.id,
-        sink_node_ids=[n_out.id],
-        Q_total=0.0,
-        fluid_properties=fluid_properties
-    )
+    solver.sim_config.total_flow_rate = 0.0
+    solution = solver.solve(net)
+    flows = solution.get("component_flows", {})
 
     # The current, incorrect implementation will produce a non-zero flow.
     assert math.isclose(flows["down_pipe"], 0.0, abs_tol=1e-9)
@@ -232,13 +216,8 @@ def test_solver_with_correct_nonlinear_logic(solver, fluid_properties):
     net.connect_components(n_in, n_out, comp)
 
     # Run the solver
-    pressures, flows = solver.solve_nodal_iterative(
-        network=net,
-        source_node_id=n_in.id,
-        sink_node_ids=[n_out.id],
-        Q_total=Q_TOTAL,
-        fluid_properties=fluid_properties
-    )
+    solution = solver.solve(net)
+    pressures = solution.get("node_pressures", {})
 
     # The final pressure drop from the solver must match the true physical
     # pressure drop for the given total flow rate.
@@ -268,13 +247,9 @@ def test_nonlinear_resistance_component(solver, fluid_properties):
     comp = QuadraticResistance(a=1000.0, b=500000.0, component_id="NL1")
     net.connect_components(n_in, n_out, comp)
 
-    pressures, flows = solver.solve_nodal_iterative(
-        network=net,
-        source_node_id=n_in.id,
-        sink_node_ids=[n_out.id],
-        Q_total=Q_TOTAL,
-        fluid_properties=fluid_properties
-    )
+    solution = solver.solve(net)
+    pressures = solution.get("node_pressures", {})
+    flows = solution.get("component_flows", {})
 
     # Analytical pressure drop for the given flow
     expected_dp = comp.calculate_pressure_drop(Q_TOTAL, fluid_properties)
@@ -304,13 +279,9 @@ def test_series_parallel_network_analytical_solution(solver, fluid_properties):
     net.connect_components(n_j, n_out, comp2)
     net.connect_components(n_j, n_out, comp3)
 
-    pressures, flows = solver.solve_nodal_iterative(
-        network=net,
-        source_node_id=n_in.id,
-        sink_node_ids=[n_out.id],
-        Q_total=Q_TOTAL,
-        fluid_properties=fluid_properties
-    )
+    solution = solver.solve(net)
+    pressures = solution.get("node_pressures", {})
+    flows = solution.get("component_flows", {})
 
     # --- Analytical Solution ---
     # Equivalent resistance of parallel branches
@@ -337,6 +308,7 @@ def test_series_parallel_network_analytical_solution(solver, fluid_properties):
     # Flow distribution in parallel branches
     assert flows[comp2.id] == pytest.approx(q2, rel=1e-6)
     assert flows[comp3.id] == pytest.approx(q3, rel=1e-6)
+
 
 def test_network_validation_logic():
     """

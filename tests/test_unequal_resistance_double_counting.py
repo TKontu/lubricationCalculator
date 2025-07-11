@@ -9,6 +9,7 @@ import numpy as np
 from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 class TestUnequalResistanceDoubleCounting:
     
@@ -48,7 +49,8 @@ class TestUnequalResistanceDoubleCounting:
         # Calculate actual resistances for analysis
         fluid_props = {'density': 900.0, 'viscosity': 1e-3}
         
-        solver = NodalMatrixSolver()
+        sim_config = SimulationConfig(total_flow_rate=Q_total, oil_density=900.0, oil_type="SAE30", temperature=40, inlet_pressure=101325)
+        solver = NodalMatrixSolver(sim_config)
         solver.calculate_viscosity = lambda T: 1e-3
         
         R_shared = solver._calculate_component_resistance(shared, fluid_props, 1e-6)

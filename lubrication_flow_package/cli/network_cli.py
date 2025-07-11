@@ -210,61 +210,42 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
     if verbose:
         network.print_network_info()
     
-    # Create solver
+    # Create and run solver
     try:
-        if solver_type == 'robust_newton':
-            solver = RobustNonLinearSolver(sim_config)
-            solution = solver.solve(network)
-            connection_flows = solution.get("component_flows", {})
-            # This is a temporary solution for solution_info
-            solution_info = {
-                'converged': solution.get('converged'),
-                'iterations': 'N/A',
-                'temperature': sim_config.temperature,
-                'viscosity': 'N/A',
-                'oil_type': sim_config.oil_type,
-                'oil_density': sim_config.oil_density,
-                'total_flow_rate': sim_config.total_flow_rate,
-                'inlet_pressure': solution.get('inlet_pressure', 0.0),
-                'outlet_pressure': sim_config.outlet_pressure or 101325.0,
-                'node_pressures': solution.get('node_pressures', {}),
-                'pressure_drops': {},
-                'fluid_properties': {}
-            }
-        else: # Default to nodal solver
-            solver = NodalMatrixSolver(
-                config_file=solver_config_file,
-                oil_density=sim_config.oil_density,
-                oil_type=sim_config.oil_type,
-                viscosity_model=sim_config.viscosity_model,
-                viscosity_parameters=sim_config.viscosity_parameters
-            )
-            connection_flows, solution_info = (
-                solver.solve_nodal_network_with_pump_physics(
-                    network,
-                    pump_flow_rate=sim_config.total_flow_rate,
-                    temperature=sim_config.temperature,
-                    pump_max_pressure=sim_config.inlet_pressure,
-                    outlet_pressure=sim_config.outlet_pressure or 101325.0,
-                    max_iterations=sim_config.max_iterations,
-                    tolerance=sim_config.tolerance
-                )
-            )
-    
-        print(f"Simulation completed")
+        # Solver Factory
+        solver_map = {
+            'nodal': NodalMatrixSolver,
+            'robust_newton': RobustNonLinearSolver
+        }
+        solver_class = solver_map.get(solver_type)
+        if not solver_class:
+            print(f"Unknown solver type: {solver_type}")
+            return False
+
+        # Load optional solver config
+        solver_config = None
+        if solver_config_file:
+            from ..solvers.config import SolverConfig
+            solver_config = SolverConfig.from_yaml(solver_config_file)
+
+        # Instantiate and run the solver using the unified interface
+        solver = solver_class(sim_config, solver_config)
+        solution = solver.solve(network)
+        
+        print(f"Simulation completed with {solver_type} solver.")
         
     except Exception as e:
         print(f"Simulation failed: {e}")
         return False
     
-    # Print results
-    solver.print_results(network, connection_flows, solution_info,
+    # Print results using the solver's own print method
+    solver.print_results(network, solution,
                          pressure_unit=sim_config.output_pressure_unit,
                          flow_rate_unit=sim_config.output_flow_rate_unit)
     
-    # Analyze system adequacy
+    # Analyze system adequacy (if the method exists)
     if hasattr(solver, 'analyze_system_adequacy'):
-        analysis = solver.analyze_system_adequacy(network, connection_flows, solution_info)
+        analysis = solver.analyze_system_adequacy(network, solution.get('component_flows', {}), solution)
         print(f"\n🔍 SYSTEM ANALYSIS:")
         print(f"   System adequate: {'YES' if analysis['adequate'] else 'NO'}")
         if analysis['issues']:
@@ -283,11 +264,14 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
             results = {
                 'network_name': network.name,
                 'simulation_parameters': sim_config.to_dict(),
-                'connection_flows': {comp_id: flow for comp_id, flow in connection_flows.items()},
-                'solution_info': solution_info,
+                'solution': solution,
                 'analysis': analysis if 'analysis' in locals() else None
             }
             
+            # Remove non-serializable items from solution if they exist
+            if 'fluid_properties' in results['solution']:
+                del results['solution']['fluid_properties']
+
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2, default=str)
             

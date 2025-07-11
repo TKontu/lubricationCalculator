@@ -33,7 +33,7 @@ def solver():
     sim_config = SimulationConfig(
         total_flow_rate=0.1, 
         oil_density=850, 
-        oil_type="ISO_VG_46",
+        oil_type="SAE30",
         temperature=40,
         inlet_pressure=101325
     )

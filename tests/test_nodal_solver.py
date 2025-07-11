@@ -5,6 +5,7 @@ from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 # Physical constants for test
 DENSITY = 900.0      # kg/m³
@@ -36,18 +37,14 @@ def simple_pipe_network():
 
 def test_two_node_case(simple_pipe_network):
     net, ch = simple_pipe_network
-    solver = NodalMatrixSolver(oil_density=DENSITY, oil_type="VG220")
+    sim_config = SimulationConfig(oil_density=DENSITY, oil_type="VG220", temperature=TEMPERATURE, total_flow_rate=Q_TOTAL, inlet_pressure=INLET_P, outlet_pressure=OUTLET_P)
+    solver = NodalMatrixSolver(sim_config)
     # monkey‐patch viscosity to fixed value
     solver.calculate_viscosity = lambda T: VISCOSITY
 
     # call unified interface
-    flows, info = solver.solve_nodal_network(
-        network=net,
-        total_flow_rate=Q_TOTAL,
-        temperature=TEMPERATURE,
-        inlet_pressure=INLET_P,
-        outlet_pressure=OUTLET_P
-    )
+    info = solver.solve(net)
+    flows = info.get("component_flows", {})
 
     # 1) only one connection
     assert ch.id in flows
@@ -90,16 +87,12 @@ def test_mass_conservation_and_branching():
     net.connect_components(n1, n2, ch1)
     net.connect_components(n1, n3, ch2)
 
-    solver = NodalMatrixSolver(oil_density=DENSITY, oil_type="VG220")
+    sim_config = SimulationConfig(oil_density=DENSITY, oil_type="VG220", temperature=TEMPERATURE, total_flow_rate=Q_TOTAL, inlet_pressure=INLET_P, outlet_pressure=OUTLET_P)
+    solver = NodalMatrixSolver(sim_config)
     solver.calculate_viscosity = lambda T: VISCOSITY
 
-    flows, info = solver.solve_nodal_network(
-        network=net,
-        total_flow_rate=Q_TOTAL,
-        temperature=TEMPERATURE,
-        inlet_pressure=INLET_P,
-        outlet_pressure=OUTLET_P
-    )
+    info = solver.solve(net)
+    flows = info.get("component_flows", {})
 
     # mass conservation at junction: main = b1 + b2
     Q_main = flows[ch_main.id]
