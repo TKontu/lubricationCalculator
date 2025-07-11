@@ -116,6 +116,14 @@ class FlowNetwork:
         
         return junction_nodes
     
+    def get_connection_by_nodes(self, u_id: str, v_id: str) -> Optional[Connection]:
+        """Finds a connection between two nodes, regardless of direction."""
+        for conn in self.connections:
+            if (conn.from_node.id == u_id and conn.to_node.id == v_id) or \
+               (conn.from_node.id == v_id and conn.to_node.id == u_id):
+                return conn
+        return None
+    
     def print_network_info(self):
         """Print network information"""
         print(f"\nNetwork: {self.name}")

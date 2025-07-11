@@ -72,16 +72,16 @@ class RobustNonLinearSolver:
             # 4. Evaluate the residual F(Q)
             residual = self._evaluate_residual(q_current, network, cycles)
 
-            # 5. Check for convergence
-            if self._check_convergence(residual):
-                print(f"Converged after {i} iterations.")
-                break
-
-            # 6. Build the Jacobian matrix J(Q)
+            # 5. Build the Jacobian matrix J(Q)
             jacobian = self._build_jacobian(q_current, network, cycles)
 
-            # 7. Solve the linear system J * delta_Q = -F
+            # 6. Solve the linear system J * delta_Q = -F
             delta_q = self._solve_linear_system(jacobian, -residual)
+
+            # 7. Check for convergence
+            if self._check_convergence(residual, delta_q, q_current):
+                print(f"Converged after {i} iterations.")
+                break
 
             # 8. Update the solution with line search
             alpha = self._line_search(q_current, delta_q, residual, network, cycles)
@@ -106,7 +106,7 @@ class RobustNonLinearSolver:
             new_residual = self._evaluate_residual(q_new, network, cycles)
             new_residual_norm_sq = np.dot(new_residual, new_residual)
 
-            if new_residual_norm_sq <= (1 - 2 * alpha * c1) * residual_norm_sq:
+            if new_residual_norm_sq <= (1 - alpha * c1) * residual_norm_sq:
                 return alpha
             
             alpha *= 0.5
@@ -198,13 +198,6 @@ class RobustNonLinearSolver:
             lil_jacobian[to_node_idx, j] = 1
 
         # 2. Pressure Loop Jacobian
-        # This is a complex part of the Jacobian. For each cycle, the derivative
-        # of the pressure loop equation with respect to the flow in a component
-        # is the sum of the differential resistances of the components in the
-        # cycle that are also in the path from the reference node to the
-        # component being differentiated.
-        #
-        # This is a placeholder for the full implementation.
         for i, cycle in enumerate(cycles):
             for j in range(len(cycle)):
                 u, v = cycle[j], cycle[(j + 1) % len(cycle)]
@@ -246,12 +239,23 @@ class RobustNonLinearSolver:
             print(f"Error solving linear system: {e}")
             return np.zeros(jacobian.shape[1])
 
-    def _check_convergence(self, residual: np.ndarray) -> bool:
+    def _check_convergence(self, residual: np.ndarray, delta_q: np.ndarray, q_current: np.ndarray) -> bool:
         """
-        Checks if the solution has converged based on the norm of the residual.
+        Checks if the solution has converged based on multiple criteria.
         """
         residual_norm = np.linalg.norm(residual)
-        return residual_norm < self.config.convergence.get("residual_tolerance", 1e-6)
+        if residual_norm >= self.config.convergence.get("residual_tolerance", 1e-6):
+            return False
+
+        q_norm = np.linalg.norm(q_current)
+        delta_q_norm = np.linalg.norm(delta_q)
+        
+        if q_norm > 1e-9: # Avoid division by zero for zero flow
+            relative_change = delta_q_norm / q_norm
+            if relative_change >= self.config.convergence.get("relative_tolerance", 1e-6):
+                return False
+
+        return True
 
     def _package_results(self, q_vector: np.ndarray, network: FlowNetwork) -> Dict:
         """
