@@ -256,3 +256,43 @@ def test_jacobian_pressure_two_cycles(solver, mocker):
     expected_rows = set(map(tuple, expected_jacobian))
 
     assert calculated_rows == expected_rows
+
+def test_jacobian_is_square(solver):
+    """
+    Tests that the Jacobian matrix is square (number of equations == number of variables).
+    This is the most critical test for the validity of the Newton-Raphson formulation.
+    A non-square Jacobian indicates a fundamental problem in the system of equations.
+    """
+    # A simple network with one cycle is sufficient to test the formulation.
+    # 4 nodes, 4 connections -> 4 variables (flows)
+    # 1 cycle -> 1 pressure equation
+    # With the bug: 4 mass equations. Total equations = 5. System = 5x4 (non-square)
+    # After the fix: 3 mass equations (N-1). Total equations = 4. System = 4x4 (square)
+    nodes_data = [("N1", "Node 1"), ("N2", "Node 2"), ("N3", "Node 3"), ("N4", "Node 4")]
+    connections_data = [
+        ("N1", "N2", "C1", 10),
+        ("N2", "N3", "C2", 20),
+        ("N3", "N4", "C3", 30),
+        ("N4", "N1", "C4", 40)
+    ]
+    network = create_network(nodes_data, connections_data)
+    # Define an inlet node to be used as the reference for N-1 mass equations
+    network.inlet_node = network.nodes["N1"]
+
+    q_vector = np.ones(len(connections_data))
+    cycles = solver._find_fundamental_cycles(network)
+    
+    # This is the call that builds the Jacobian
+    jacobian = solver._build_jacobian(q_vector, network, cycles)
+    
+    # The number of variables is the number of connections (flows)
+    num_variables = len(connections_data)
+    
+    # The number of equations is the number of rows in the Jacobian
+    num_equations = jacobian.shape[0]
+    
+    # Assert that the matrix is square
+    assert num_equations == num_variables, (
+        f"Jacobian matrix should be square, but has shape {jacobian.shape}. "
+        f"Number of equations ({num_equations}) does not match number of variables ({num_variables})."
+    )

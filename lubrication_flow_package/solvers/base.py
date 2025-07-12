@@ -45,7 +45,7 @@ class SolverBase(ABC):
         Returns:
             A dictionary containing the complete solution, including flows,
             pressures, and convergence information. The structure of this
-d           ictionary should be standardized across all solvers.
+            dictionary should be standardized across all solvers.
         """
         raise NotImplementedError("Subclasses must implement the solve method.")
 

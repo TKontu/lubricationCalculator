@@ -1,56 +1,42 @@
 # Task List / Backlog
 
-This list has been refactored to prioritize the unification of the solver APIs and streamline future development.
+This list has been updated to prioritize critical solver fixes, code quality improvements, and future enhancements.
 
-## High Priority: Solver API Refactoring
+## High Priority: Critical Solver & Physics Fixes
 
-The immediate goal is to refactor all solvers to conform to a single, unified interface. This will eliminate technical debt, simplify the CLI, and make the system more maintainable and extensible.
+- [ ] **Fix `RobustNonLinearSolver` Jacobian Formulation:**
+  - **Issue:** The current implementation creates a non-square Jacobian matrix, which is mathematically incorrect for the Newton-Raphson method.
+  - **Fix:** Modify `_evaluate_residual` and `_build_jacobian` to use `N-1` mass conservation equations, ensuring a square and solvable system. Replace the `lsqr` solver with the more appropriate `spsolve`.
 
-- [ ] **1. Define a `SolverBase` Abstract Class:**
-  - [ ] Create a new file `lubrication_flow_package/solvers/base.py`.
-  - [ ] Define an abstract base class `SolverBase` with the following methods:
-    - `__init__(self, sim_config: SimulationConfig, solver_config: Optional[SolverConfig] = None)`
-    - `solve(self, network: FlowNetwork) -> Dict`
-    - `print_results(self, ...)`
-    - `get_default_solver_config(self) -> SolverConfig`
+- [ ] **Centralize and Correct Viscosity Calculation:**
+  - **Issue:** `SolverBase` uses a hardcoded placeholder viscosity, making `RobustNonLinearSolver` results incorrect. `NodalMatrixSolver` uses a separate, hardcoded internal table. This violates DRY and leads to incorrect physics.
+  - **Fix:** Create a single, robust viscosity calculation function in a central utility module. All solvers **must** call this function to get fluid properties. This ensures consistent and correct physics across the application.
 
-- [ ] **2. Refactor `NodalMatrixSolver` to Conform to `SolverBase`:**
-  - [ ] Modify `NodalMatrixSolver` to inherit from `SolverBase`.
-  - [ ] Update its `__init__` method to accept `(sim_config, solver_config)`.
-  - [ ] Create a public `solve()` method that matches the base class interface.
-  - [ ] Move the existing solve logic into a private method (e.g., `_solve_nodal_network(...)`).
-  - [ ] Adapt the return value of the private method to the standardized results dictionary format.
+- [ ] **Improve `RobustNonLinearSolver` Pressure Calculation:**
+  - **Issue:** The current BFS-based pressure calculation is susceptible to inaccuracies in networks with loops.
+  - **Fix:** After solving for flows, formulate and solve a separate linear system for all node pressures simultaneously to ensure global consistency.
 
-- [ ] **3. Refactor `RobustNonLinearSolver` to Conform to `SolverBase`:**
-  - [ ] Modify `RobustNonLinearSolver` to inherit from `SolverBase`.
-  - [ ] Update its `__init__` method to accept `(sim_config, solver_config)`.
-  - [ ] Ensure its `solve()` method and return value already match the interface.
+## Medium Priority: Code Quality and Refactoring
 
-- [ ] **4. Simplify the CLI (`network_cli.py`):**
-  - [ ] Remove the complex `if/else` block for solver selection.
-  - [ ] Implement a simple factory pattern to choose the correct solver class (`RobustNonLinearSolver` or `NodalMatrixSolver`).
-  - [ ] Instantiate and call the chosen solver using the single, unified interface.
+- [ ] **Unify `print_results` Method in `SolverBase`:**
+  - **Issue:** `print_results` is duplicated across both solvers, making maintenance difficult. The method in `SolverBase` is abstract.
+  - **Fix:** Implement the `print_results` method fully in the `SolverBase` class. Remove the duplicate implementations from the subclasses.
 
-- [ ] **5. Standardize Configuration Handling:**
-  - [ ] Ensure both solvers can be initialized with a default `SolverConfig` or a user-provided one.
-  - [ ] Update the CLI to properly load and pass the `--solver-config` file to the chosen solver.
+- [ ] **Externalize Fluid Data:**
+  - **Issue:** Viscosity parameters are hardcoded.
+  - **Fix:** Move all fluid property data to an external configuration file (e.g., `fluids.yaml`) and have the centralized viscosity function load it at runtime.
 
-## Medium Priority: Post-Refactoring Improvements
+- [ ] **Improve Flow Initialization:**
+  - **Issue:** Both solvers use naive or overly complex initial flow guesses.
+  - **Fix:** Implement a consistent, topology-aware flow initialization method. A good approach is to use a single linear solve with estimated resistances.
 
-Once the solver API is unified, we can focus on improving the underlying physics and adding features in a solver-agnostic way.
+- [ ] **Refine `NodalMatrixSolver` Resistance Calculation:**
+  - **Issue:** The finite-difference step (`delta_q`) is too large, potentially leading to inaccurate resistance values and slower convergence.
+  - **Fix:** Reduce the relative step size in `_calculate_component_resistance` from `1e-3` to `1e-6`.
 
-- [ ] **Enhanced Physics & Validation:**
-  - [ ] **Fix Connector Physics:** URGENT - Current reducer/expander calculations are incorrect. Validate against hydraulic handbooks.
-  - [ ] **Temperature-Dependent Viscosity:** Re-evaluate viscosity during solver iterations for better accuracy in systems with significant temperature changes.
-  - [ ] **Comprehensive Validation Suite:** Expand the test suite to include more complex networks and analytical benchmarks to validate the physics of both solvers.
-
-- [ ] **Advanced Solver Features (for `RobustNonLinearSolver`):**
-  - [ ] Implement Trust Region methods as an alternative to line search for improved global convergence.
-  - [ ] Implement Broyden's method for cheaper Jacobian updates in large networks.
-
-- [ ] **GUI Improvements:**
-  - [ ] Refactor the GUI to use the new unified solver interface.
-  - [ ] Stabilize the GUI data model and fix interaction bugs.
+- [ ] **Standardize Configuration:**
+  - **Issue:** Solver parameters are passed inconsistently.
+  - **Fix:** Enforce that all solver settings are managed exclusively through the `SolverConfig` object.
 
 ## Low Priority / Future Enhancements
 
@@ -59,4 +45,14 @@ Once the solver API is unified, we can focus on improving the underlying physics
   - [ ] Implement `ThermalExchanger` and `VariableValve` components.
 
 - [ ] **Advanced Physics Models:**
-  - [ ] Add support for transient simulations and compressible flow.
+  - [ ] Add support for transient simulations.
+  - [ ] Add support for compressible flow.
+  - [ ] Re-evaluate temperature-dependent viscosity during solver iterations.
+
+- [ ] **Advanced Solver Features:**
+  - [ ] Implement Trust Region methods as an alternative to line search.
+  - [ ] Implement Broyden's method for cheaper Jacobian updates.
+
+- [ ] **GUI Improvements:**
+  - [ ] Refactor the GUI to use the unified solver interface.
+  - [ ] Stabilize the GUI data model and fix interaction bugs.

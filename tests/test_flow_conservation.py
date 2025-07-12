@@ -75,13 +75,14 @@ def test_inclined_network_hydrostatic_adjustment(solver, fluid_properties):
     network.connect_components(node_A, node_B, channel)
 
     solver.sim_config.total_flow_rate = 0.002
-    solver.sim_config.inlet_pressure = 200000
-    solver.sim_config.outlet_pressure = 101325
+    solver.sim_config.inlet_pressure = 200000 # 1 bar gauge
+    solver.sim_config.outlet_pressure = 101325 # atmospheric
     solution = solver.solve(network)
     info = solution
 
     # Pressure diff from ρgΔz = 900 * 9.81 * 2 = 17658 Pa
     dp_expected = 17658 + channel.calculate_pressure_drop(0.002, fluid_properties)
+
     actual_dp = info["node_pressures"][node_A.id] - info["node_pressures"][node_B.id]
 
     assert actual_dp == pytest.approx(dp_expected, rel=1e-2)
