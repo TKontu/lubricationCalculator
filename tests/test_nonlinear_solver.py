@@ -26,6 +26,9 @@ class MockComponent(FlowComponent):
         # A simple non-linear relationship: dP = R * q * |q|
         return self.resistance_val * q * np.abs(q)
 
+    def get_flow_area(self) -> float:
+        return 0.01
+
 # Fixture to provide a solver instance for tests
 @pytest.fixture
 def solver():
@@ -306,3 +309,113 @@ def test_jacobian_is_square(solver):
         f"Jacobian matrix should be square, but has shape {jacobian.shape}. "
         f"Number of equations ({num_equations}) does not match number of variables ({num_variables})."
     )
+
+def test_pressure_calculation_double_loop(solver):
+    """
+    Tests the final pressure calculation for a network with two connected loops.
+    This test is designed to fail with the BFS-based pressure calculation.
+    """
+    nodes_data = [
+        ("N1", "Inlet"), 
+        ("N2", "Junction1"), 
+        ("N3", "MidLoop"), 
+        ("N4", "Junction2"), 
+        ("N5", "Outlet")
+    ]
+    connections_data = [
+        ("N1", "N2", "C1", 10),
+        ("N2", "N3", "C2", 20),
+        ("N3", "N4", "C3", 30),
+        ("N2", "N4", "C4", 40), # Bridge between loops
+        ("N4", "N5", "C5", 50)
+    ]
+    network = create_network(nodes_data, connections_data)
+    network.inlet_node = network.nodes["N1"]
+    network.add_outlet(network.nodes["N5"])
+
+    # Set a known total flow rate
+    solver.sim_config.total_flow_rate = 0.1
+
+    # Run the full solver
+    solution = solver.solve(network)
+    pressures = solution.get("node_pressures", {})
+    flows = solution.get("component_flows", {})
+
+    # --- Analytical Solution ---
+    # With the BFS approach, the pressure at N4 will be calculated based on the
+    # path from N5. However, the pressure at N4 is also influenced by the
+    # path from N2. The BFS approach can't handle this correctly.
+    # We can calculate the expected pressure at N4 by considering both paths.
+    
+    # This is a simplified analytical solution. A real one would be more complex.
+    # The key is that the pressure at N4 should be consistent regardless of the
+    # path taken to calculate it.
+    
+    # Pressure drop from N4 to N5
+    dp5 = 50 * flows['C5'] * abs(flows['C5'])
+    p4_from_n5 = pressures['N5'] + dp5
+
+    # Pressure drop from N2 to N4
+    dp4 = 40 * flows['C4'] * abs(flows['C4'])
+    
+    # Pressure at N2
+    p2 = pressures['N2']
+    
+    p4_from_n2 = p2 - dp4
+
+    # The pressure at N4 should be consistent
+    assert p4_from_n5 == pytest.approx(p4_from_n2, rel=1e-3)
+
+def test_pressure_calculation_simple_loop(solver):
+    """
+    Tests the final pressure calculation for a simple square network.
+    This test runs the full solver and verifies the calculated node pressures
+    against an analytical solution.
+    """
+    nodes_data = [("N1", "Node 1"), ("N2", "Node 2"), ("N3", "Node 3")]
+    connections_data = [
+        ("N1", "N2", "C1", 10),
+        ("N2", "N3", "C2", 20),
+        ("N3", "N1", "C3", 30)
+    ]
+    network = create_network(nodes_data, connections_data)
+    network.inlet_node = network.nodes["N1"]
+    network.add_outlet(network.nodes["N3"])
+
+    # Set a known total flow rate
+    solver.sim_config.total_flow_rate = 0.1
+
+    # Run the full solver
+    solution = solver.solve(network)
+    pressures = solution.get("node_pressures", {})
+
+    # --- Analytical Solution ---
+    # This is a simple delta network. We can calculate the expected pressures.
+    # The solver will find the flows, and from the flows, the pressures.
+    # We can manually calculate the expected pressure at N2.
+    # The pressure at N3 is the outlet pressure (0.0 in this case).
+    # The pressure at N1 is the inlet pressure.
+    # The flow will split between the two paths.
+    # Path 1: N1 -> N2 -> N3 (R = 10 + 20 = 30)
+    # Path 2: N1 -> N3 (R = 30)
+    # The conductances are equal, so the flow should split evenly.
+    q1 = 0.05
+    q2 = 0.05
+    q3 = 0.05
+
+    # Pressure drop across C1
+    dp1 = 10 * q1 * abs(q1)
+    # Pressure drop across C2
+    dp2 = 20 * q2 * abs(q2)
+    # Pressure drop across C3
+    dp3 = 30 * q3 * abs(q3)
+
+    # Pressure at N2, relative to N3
+    p2_expected = dp2
+
+    # Pressure at N1, relative to N3
+    p1_expected = p2_expected + dp1
+
+    assert pressures["N1"] == pytest.approx(p1_expected, rel=1e-3)
+    assert pressures["N2"] == pytest.approx(p2_expected, rel=1e-3)
+    assert pressures["N3"] == pytest.approx(0.0, abs=1e-9)
