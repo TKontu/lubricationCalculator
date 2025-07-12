@@ -48,8 +48,6 @@ class NodalMatrixSolver(SolverBase):
             logger: Optional logger for debugging output.
         """
         super().__init__(sim_config, solver_config)
-        self.oil_density = sim_config.oil_density
-        self.oil_type = sim_config.oil_type
         self.gravity = 9.81
         self.logger = logger or logging.getLogger(__name__)
 
@@ -97,7 +95,6 @@ class NodalMatrixSolver(SolverBase):
 
             # 3. Fluid properties are now calculated in the SolverBase __init__
             fluid_properties = self.fluid_properties
-            viscosity = fluid_properties['viscosity']
 
             # 4. Identify inlet/outlet nodes
             inlet_node   = network.inlet_node
@@ -125,9 +122,9 @@ class NodalMatrixSolver(SolverBase):
                 'converged':    True,
                 'iterations':   max_iter,      # ideally updated by solver
                 'temperature':  temperature,
-                'viscosity':    viscosity,
-                'oil_type':     self.oil_type,
-                'oil_density':  self.oil_density,
+                'viscosity':    self.fluid_properties['viscosity'],
+                'oil_type':     self.sim_config.oil_type,
+                'oil_density':  self.sim_config.oil_density,
                 'total_flow_rate': total_flow_rate,
                 'inlet_pressure':  inlet_pressure,
                 'outlet_pressure': outlet_pressure,

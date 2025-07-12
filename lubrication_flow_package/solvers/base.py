@@ -33,7 +33,17 @@ class SolverBase(ABC):
         """
         self.sim_config = sim_config
         self.config = solver_config if solver_config else self.get_default_solver_config()
-        self.fluid_properties = self._get_fluid_properties()
+        
+        # Centralized fluid property calculation
+        viscosity = calculate_viscosity(
+            temperature=self.sim_config.temperature,
+            oil_type=self.sim_config.oil_type,
+            viscosity_model=self.sim_config.viscosity_model
+        )
+        self.fluid_properties = {
+            'density': self.sim_config.oil_density,
+            'viscosity': viscosity
+        }
 
     @abstractmethod
     def solve(self, network: FlowNetwork) -> Dict:
@@ -68,17 +78,4 @@ class SolverBase(ABC):
         """
         return SolverConfig()
 
-    def _get_fluid_properties(self) -> Dict:
-        """
-        Computes and returns the fluid properties from the simulation config.
-        """
-        viscosity = calculate_viscosity(
-            temperature=self.sim_config.temperature,
-            oil_type=self.sim_config.oil_type,
-            viscosity_model=self.sim_config.viscosity_model,
-            viscosity_parameters=self.sim_config.viscosity_parameters
-        )
-        return {
-            'density': self.sim_config.oil_density,
-            'viscosity': viscosity
-        }
+    
