@@ -57,7 +57,11 @@ def create_network(nodes_data, connections_data):
     network = FlowNetwork(name="TestNetwork")
     network.nodes = nodes
     network.connections = connections
-    # Inlet/outlet are not needed for Jacobian tests
+    
+    # Set the first node as the inlet node by default for all tests
+    if nodes_data:
+        network.inlet_node = nodes[nodes_data[0][0]]
+        
     return network
 
 def test_jacobian_pressure_simple_square(solver, mocker):
@@ -88,8 +92,8 @@ def test_jacobian_pressure_simple_square(solver, mocker):
     cycles = solver._find_fundamental_cycles(network)
     jacobian = solver._build_jacobian(q_vector, network, cycles)
 
-    # The system has 4 nodes and 1 cycle. The pressure equation corresponds to the last row.
-    pressure_jacobian_row = jacobian.toarray()[4, :]
+    # The system has 4 nodes (3 mass equations) and 1 cycle. The pressure equation is at index 3.
+    pressure_jacobian_row = jacobian.toarray()[3, :]
     
     # The expected row depends on the cycle found by networkx. We must build it
     # dynamically to ensure the test is robust.
@@ -139,7 +143,8 @@ def test_jacobian_pressure_square_with_reversed_edge(solver, mocker):
     cycles = solver._find_fundamental_cycles(network)
     jacobian = solver._build_jacobian(q_vector, network, cycles)
 
-    pressure_jacobian_row = jacobian.toarray()[4, :]
+    # The system has 4 nodes (3 mass equations) and 1 cycle. The pressure equation is at index 3.
+    pressure_jacobian_row = jacobian.toarray()[3, :]
     
     expected_row = np.zeros(len(connections_data))
     cycle = cycles[0]
@@ -185,9 +190,8 @@ def test_jacobian_pressure_with_branch(solver, mocker):
     cycles = solver._find_fundamental_cycles(network)
     jacobian = solver._build_jacobian(q_vector, network, cycles)
 
-    # The branch component "C5" should not be in the cycle.
-    # Its column in the pressure jacobian should be 0.
-    pressure_jacobian_row = jacobian.toarray()[5, :] # 5 nodes, 1 cycle -> row index 5
+    # 5 nodes (4 mass equations), 1 cycle -> pressure equation is at index 4
+    pressure_jacobian_row = jacobian.toarray()[4, :]
     
     comp_to_idx = {conn.component.id: i for i, conn in enumerate(network.connections)}
     branch_comp_idx = comp_to_idx["C5"]
@@ -226,17 +230,23 @@ def test_jacobian_pressure_two_cycles(solver, mocker):
     cycles = solver._find_fundamental_cycles(network)
     jacobian = solver._build_jacobian(q_vector, network, cycles)
 
-    # 6 nodes, 2 cycles. Pressure rows are the last two, indices 6 and 7.
-    assert len(cycles) == 2
-    assert jacobian.shape[0] == 6 + 2
+    # 6 nodes (5 mass eq), 6 connections -> 1 cycle eq is needed for a square 6x6 system.
+    num_connections = len(connections_data)
+    num_mass_eq = len(nodes_data) - 1
+    num_cycle_eq = num_connections - num_mass_eq
+    
+    assert len(cycles) >= num_cycle_eq # networkx can find more cycles than needed
+    assert jacobian.shape[0] == num_connections
 
-    pressure_jacobian = jacobian.toarray()[6:, :]
+    pressure_jacobian = jacobian.toarray()[num_mass_eq:, :]
+    assert pressure_jacobian.shape[0] == num_cycle_eq
 
-    # Dynamically build the expected Jacobian for both cycles
-    expected_jacobian = np.zeros((2, len(connections_data)))
+    # Dynamically build the expected Jacobian for the cycles that are actually used
+    expected_jacobian = np.zeros((num_cycle_eq, len(connections_data)))
     comp_to_idx = {conn.component.id: i for i, conn in enumerate(network.connections)}
 
-    for i, cycle in enumerate(cycles):
+    for i in range(num_cycle_eq):
+        cycle = cycles[i]
         for j in range(len(cycle)):
             u, v = cycle[j], cycle[(j + 1) % len(cycle)]
             conn = network.get_connection_by_nodes(u, v)

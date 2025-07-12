@@ -131,30 +131,38 @@ class RobustNonLinearSolver(SolverBase):
     def _evaluate_residual(self, q_vector: np.ndarray, network: FlowNetwork, cycles: List[List[str]]) -> np.ndarray:
         """
         Evaluates the residual vector F(Q) for the system of non-linear equations.
+        The system is composed of (N-1) mass conservation equations and L pressure loop equations.
         """
-        num_nodes = len(network.nodes)
-        num_cycles = len(cycles)
-        num_equations = num_nodes + num_cycles
+        if not network.inlet_node:
+            raise ValueError("An inlet node must be defined in the network for the non-linear solver.")
+
+        num_connections = len(network.connections)
+        num_mass_equations = len(network.nodes) - 1
+        
+        # The number of cycle equations must make the system square
+        num_cycles = num_connections - num_mass_equations
+        num_equations = num_mass_equations + num_cycles
 
         residual = np.zeros(num_equations)
         comp_to_idx = {conn.component.id: i for i, conn in enumerate(network.connections)}
 
-        # 1. Mass Conservation Equations
-        for i, (node_id, node) in enumerate(network.nodes.items()):
+        # 1. Mass Conservation Equations (excluding the reference node, e.g., inlet)
+        reference_node_id = network.inlet_node.id
+        node_list = [node for node_id, node in network.nodes.items() if node_id != reference_node_id]
+
+        for i, node in enumerate(node_list):
             flow_sum = 0
             for conn in network.connections:
-                if conn.to_node.id == node_id:
+                if conn.to_node.id == node.id:
                     flow_sum += q_vector[comp_to_idx[conn.component.id]]
-                elif conn.from_node.id == node_id:
+                elif conn.from_node.id == node.id:
                     flow_sum -= q_vector[comp_to_idx[conn.component.id]]
-            
-            if node.id == network.inlet_node.id:
-                flow_sum -= self.sim_config.total_flow_rate
             
             residual[i] = flow_sum
 
         # 2. Pressure Loop Equations
-        for i, cycle in enumerate(cycles):
+        for i in range(num_cycles):
+            cycle = cycles[i]
             pressure_drop_sum = 0
             for j in range(len(cycle)):
                 u, v = cycle[j], cycle[(j + 1) % len(cycle)]
@@ -168,45 +176,65 @@ class RobustNonLinearSolver(SolverBase):
                     else:
                         pressure_drop_sum -= dp
             
-            residual[num_nodes + i] = pressure_drop_sum
+            residual[num_mass_equations + i] = pressure_drop_sum
 
         return residual
 
     def _build_jacobian(self, q_vector: np.ndarray, network: FlowNetwork, cycles: List[List[str]]) -> csr_matrix:
         """
-        Constructs the Jacobian matrix J(Q) for the system.
+        Constructs the square Jacobian matrix J(Q) for the system.
         """
-        num_nodes = len(network.nodes)
-        num_cycles = len(cycles)
+        if not network.inlet_node:
+            raise ValueError("An inlet node must be defined in the network for the non-linear solver.")
+
         num_connections = len(network.connections)
-        num_equations = num_nodes + num_cycles
         num_variables = num_connections
+        
+        num_mass_equations = len(network.nodes) - 1
+        
+        # The number of cycle equations must make the system square
+        num_cycles = num_connections - num_mass_equations
+        num_equations = num_mass_equations + num_cycles
+
+        if num_equations != num_variables:
+            # This check is now more of a safeguard; the logic should always produce a square system.
+            raise RuntimeError(
+                f"The system must be square. Equations: {num_equations}, Variables: {num_variables}"
+            )
 
         lil_jacobian = lil_matrix((num_equations, num_variables))
         comp_to_idx = {conn.component.id: i for i, conn in enumerate(network.connections)}
 
-        # 1. Mass Conservation Jacobian
-        node_to_idx = {node_id: i for i, node_id in enumerate(network.nodes)}
-        for j, conn in enumerate(network.connections):
-            from_node_idx = node_to_idx[conn.from_node.id]
-            to_node_idx = node_to_idx[conn.to_node.id]
-            lil_jacobian[from_node_idx, j] = -1
-            lil_jacobian[to_node_idx, j] = 1
+        # 1. Mass Conservation Jacobian (excluding the reference node)
+        reference_node_id = network.inlet_node.id
+        node_list = [node for node_id, node in network.nodes.items() if node_id != reference_node_id]
+        node_to_row_idx = {node.id: i for i, node in enumerate(node_list)}
+
+        for col_idx, conn in enumerate(network.connections):
+            if conn.from_node.id in node_to_row_idx:
+                row_idx = node_to_row_idx[conn.from_node.id]
+                lil_jacobian[row_idx, col_idx] = -1
+            
+            if conn.to_node.id in node_to_row_idx:
+                row_idx = node_to_row_idx[conn.to_node.id]
+                lil_jacobian[row_idx, col_idx] = 1
 
         # 2. Pressure Loop Jacobian
-        for i, cycle in enumerate(cycles):
+        for i in range(num_cycles):
+            cycle = cycles[i]
+            row_idx = num_mass_equations + i
             for j in range(len(cycle)):
                 u, v = cycle[j], cycle[(j + 1) % len(cycle)]
                 conn = network.get_connection_by_nodes(u, v)
                 if conn:
-                    comp_idx = comp_to_idx[conn.component.id]
-                    q = q_vector[comp_idx]
+                    col_idx = comp_to_idx[conn.component.id]
+                    q = q_vector[col_idx]
                     resistance = self._calculate_differential_resistance(conn.component, q, self.fluid_properties)
                     
                     if conn.from_node.id == u:
-                        lil_jacobian[num_nodes + i, comp_idx] = resistance
+                        lil_jacobian[row_idx, col_idx] = resistance
                     else:
-                        lil_jacobian[num_nodes + i, comp_idx] = -resistance
+                        lil_jacobian[row_idx, col_idx] = -resistance
         
         return lil_jacobian.tocsr()
 
@@ -214,23 +242,25 @@ class RobustNonLinearSolver(SolverBase):
         """
         Computes R = d(ΔP)/dQ for a component by central differencing.
         """
-        delta_q = max(abs(q_est) * 1e-4, 1e-9)
+        delta_q = max(abs(q_est) * 1e-6, 1e-9) # Use a smaller relative step for better accuracy
         dp_plus = component.calculate_pressure_drop(q_est + delta_q, fluid_properties)
         dp_minus = component.calculate_pressure_drop(q_est - delta_q, fluid_properties)
         resistance = (dp_plus - dp_minus) / (2.0 * delta_q)
-        return max(resistance, 1e-3)
+        return max(resistance, self.config.min_resistance)
 
     def _solve_linear_system(self, jacobian: csr_matrix, residual: np.ndarray) -> np.ndarray:
         """
-        Solves the linear system J * delta_Q = -F using a least-squares solver
-        that can handle non-square matrices.
+        Solves the linear system J * delta_Q = -residual using a direct sparse solver.
         """
         try:
-            # lsqr is suitable for sparse, potentially non-square matrices.
-            # It solves the equation Ax = b in a least-squares sense.
-            result = linalg.lsqr(jacobian, -residual, atol=1e-9, btol=1e-9)
-            delta_q = result[0]
+            # Use spsolve for sparse, square linear systems.
+            delta_q = linalg.spsolve(jacobian, -residual)
             return delta_q
+        except linalg.LinAlgError as e:
+            # This can happen if the Jacobian is singular.
+            print(f"Warning: Linear system may be singular. Solver failed with: {e}")
+            # Return a zero vector as a fallback to prevent crashing.
+            return np.zeros(jacobian.shape[1])
         except Exception as e:
             print(f"Error solving linear system: {e}")
             return np.zeros(jacobian.shape[1])
