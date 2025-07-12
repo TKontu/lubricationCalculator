@@ -23,14 +23,4 @@ def test_calculate_viscosity_unsupported_oil():
     with pytest.raises(ValueError):
         calculate_viscosity(temperature=40, oil_type="UNSUPPORTED_OIL")
 
-def test_calculate_viscosity_custom_params():
-    """
-    Tests the function with custom viscosity parameters.
-    """
-    custom_params = {"A": 0.0001, "B": 1200, "C": 140}
-    viscosity = calculate_viscosity(
-        temperature=40,
-        oil_type="CUSTOM",
-        viscosity_parameters=custom_params
-    )
-    assert viscosity == pytest.approx(0.10229, rel=1e-3)
+

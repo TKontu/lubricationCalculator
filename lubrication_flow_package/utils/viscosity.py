@@ -4,25 +4,35 @@ Centralized fluid property calculations.
 
 import math
 from typing import Dict, Optional
+import yaml
+import os
 
-# This data can be moved to an external file (e.g., fluids.yaml) in the future.
-VISCOSITY_PARAMS = {
-    "SAE10": {"A": 0.00004, "B": 950, "C": 135},
-    "SAE20": {"A": 0.00006, "B": 1050, "C": 138},
-    "SAE30": {"A": 0.0001, "B": 1200, "C": 140},
-    "SAE40": {"A": 0.00015, "B": 1300, "C": 142},
-    "SAE50": {"A": 0.0002, "B": 1400, "C": 145},
-    "SAE60": {"A": 0.00025, "B": 1500, "C": 148},
-    "VG220": {"A": 0.000064, "B": 1455, "C": 131},
-    "VG320": {"A": 0.000064, "B": 1520, "C": 131},
-    "VG460": {"A": 0.000064, "B": 1576, "C": 131}
-}
+import yaml
+import os
+
+def load_fluid_properties() -> Dict:
+    """Loads fluid properties from the fluids.yaml file."""
+    # Construct an absolute path to the config file
+    # Assuming the script is run from the root of the project
+    config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fluids.yaml')
+    if not os.path.exists(config_path):
+        # Fallback for different execution contexts (like tests)
+        config_path = os.path.join(os.getcwd(), 'config', 'fluids.yaml')
+        if not os.path.exists(config_path):
+             config_path = os.path.join(os.getcwd(), '..', 'config', 'fluids.yaml')
+             if not os.path.exists(config_path):
+                raise FileNotFoundError("Could not find fluids.yaml in expected locations.")
+
+    with open(config_path, 'r') as f:
+        data = yaml.safe_load(f)
+    return data.get('fluids', {})
+
+VISCOSITY_PARAMS = load_fluid_properties()
 
 def calculate_viscosity(
     temperature: float,
     oil_type: str,
-    viscosity_model: str = 'vogel',
-    viscosity_parameters: Optional[Dict] = None
+    viscosity_model: str = 'vogel'
 ) -> float:
     """
     Calculate dynamic viscosity using the Vogel equation.
@@ -39,12 +49,9 @@ def calculate_viscosity(
     T = temperature + 273.15  # Convert to Kelvin
 
     if viscosity_model == 'vogel':
-        if viscosity_parameters:
-            params = viscosity_parameters
-        else:
-            if oil_type not in VISCOSITY_PARAMS:
-                raise ValueError(f"Oil type '{oil_type}' not supported in internal database.")
-            params = VISCOSITY_PARAMS[oil_type]
+        if oil_type not in VISCOSITY_PARAMS:
+            raise ValueError(f"Oil type '{oil_type}' not supported in internal database.")
+        params = VISCOSITY_PARAMS[oil_type]
         
         # Vogel's equation is undefined at or below the pole temperature C.
         # Add a small epsilon to prevent math errors if temperature is too close.

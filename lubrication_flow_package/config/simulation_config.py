@@ -20,7 +20,6 @@ class SimulationConfig:
     oil_density: float = 900.0  # kg/m³
     oil_type: str = "SAE30"
     viscosity_model: str = "vogel"
-    viscosity_parameters: Optional[Dict[str, float]] = None
     
     # Solver settings
     max_iterations: int = 100
@@ -49,8 +48,7 @@ class SimulationConfig:
             'fluid_properties': {
                 'oil_density': self.oil_density,
                 'oil_type': self.oil_type,
-                'viscosity_model': self.viscosity_model,
-                'viscosity_parameters': self.viscosity_parameters
+                'viscosity_model': self.viscosity_model
             },
             'solver_settings': {
                 'max_iterations': self.max_iterations,
@@ -85,7 +83,6 @@ class SimulationConfig:
             oil_density=fluid_props.get('oil_density', 900.0),
             oil_type=fluid_props.get('oil_type', 'SAE30'),
             viscosity_model=fluid_props.get('viscosity_model', 'vogel'),
-            viscosity_parameters=fluid_props.get('viscosity_parameters'),
             max_iterations=solver_settings.get('max_iterations', 100),
             tolerance=solver_settings.get('tolerance', 1e-6),
             relaxation_factor=solver_settings.get('relaxation_factor', 0.8),
