@@ -1,0 +1,30 @@
+{
+  "network_name": "Simple Branching Network",
+  "description": "A simple network with one junction and two outlets.",
+  "nodes": [
+    { "id": "inlet", "name": "Inlet", "type": "inlet", "elevation": 0.0 },
+    { "id": "junction", "name": "Junction", "type": "junction", "elevation": 1.0 },
+    { "id": "outlet1", "name": "Outlet A", "type": "outlet", "elevation": 2.0 },
+    { "id": "outlet2", "name": "Outlet B", "type": "outlet", "elevation": 1.0 }
+  ],
+  "components": [
+    { "id": "main_pipe", "name": "Main Pipe", "type": "channel", "diameter": 0.1, "length": 10.0 },
+    { "id": "branch_a", "name": "Branch A", "type": "channel", "diameter": 0.05, "length": 5.0 },
+    { "id": "branch_b", "name": "Branch B", "type": "channel", "diameter": 0.05, "length": 5.0 }
+  ],
+  "connections": [
+    { "from_node": "inlet", "to_node": "junction", "component": "main_pipe" },
+    { "from_node": "junction", "to_node": "outlet1", "component": "branch_a" },
+    { "from_node": "junction", "to_node": "outlet2", "component": "branch_b" }
+  ],
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 0.020,
+      "temperature": 40.0
+    },
+    "fluid_properties": {
+      "oil_density": 870.0,
+      "oil_type": "SAE30"
+    }
+  }
+}

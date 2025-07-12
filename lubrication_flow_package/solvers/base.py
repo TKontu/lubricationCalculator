@@ -7,6 +7,7 @@ from typing import Dict, Optional
 
 from ..config.simulation_config import SimulationConfig
 from ..network.flow_network import FlowNetwork
+from ..utils.viscosity import calculate_viscosity
 from .config import SolverConfig
 
 
@@ -70,11 +71,14 @@ class SolverBase(ABC):
     def _get_fluid_properties(self) -> Dict:
         """
         Computes and returns the fluid properties from the simulation config.
-        This can be expanded in subclasses if more complex fluid modeling is needed.
         """
-        # For now, this is a simple implementation. It can be made more complex,
-        # for example, by using a temperature-dependent viscosity model.
+        viscosity = calculate_viscosity(
+            temperature=self.sim_config.temperature,
+            oil_type=self.sim_config.oil_type,
+            viscosity_model=self.sim_config.viscosity_model,
+            viscosity_parameters=self.sim_config.viscosity_parameters
+        )
         return {
             'density': self.sim_config.oil_density,
-            'viscosity': 0.01  # Placeholder, to be replaced with a proper model
+            'viscosity': viscosity
         }

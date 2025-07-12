@@ -19,7 +19,7 @@ class SimulationConfig:
     # Fluid properties
     oil_density: float = 900.0  # kg/m³
     oil_type: str = "SAE30"
-    viscosity_model: Optional[str] = None
+    viscosity_model: str = "vogel"
     viscosity_parameters: Optional[Dict[str, float]] = None
     
     # Solver settings
@@ -84,7 +84,7 @@ class SimulationConfig:
             outlet_pressure=flow_params.get('outlet_pressure'),
             oil_density=fluid_props.get('oil_density', 900.0),
             oil_type=fluid_props.get('oil_type', 'SAE30'),
-            viscosity_model=fluid_props.get('viscosity_model'),
+            viscosity_model=fluid_props.get('viscosity_model', 'vogel'),
             viscosity_parameters=fluid_props.get('viscosity_parameters'),
             max_iterations=solver_settings.get('max_iterations', 100),
             tolerance=solver_settings.get('tolerance', 1e-6),

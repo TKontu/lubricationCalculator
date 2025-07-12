@@ -50,8 +50,6 @@ class NodalMatrixSolver(SolverBase):
         super().__init__(sim_config, solver_config)
         self.oil_density = sim_config.oil_density
         self.oil_type = sim_config.oil_type
-        self.viscosity_model = sim_config.viscosity_model
-        self.viscosity_parameters = sim_config.viscosity_parameters
         self.gravity = 9.81
         self.logger = logger or logging.getLogger(__name__)
 
@@ -72,36 +70,6 @@ class NodalMatrixSolver(SolverBase):
         # Adapt the old solution_info to the new standard format
         solution_info['component_flows'] = connection_flows
         return solution_info
-
-    def calculate_viscosity(self, temperature: float) -> float:
-        """Calculate dynamic viscosity using Vogel equation"""
-        T = temperature + 273.15
-
-        if self.viscosity_model == 'vogel' and self.viscosity_parameters:
-            params = self.viscosity_parameters
-        else:
-            viscosity_params = {
-                "SAE10": {"A": 0.00004, "B": 950, "C": 135},
-                "SAE20": {"A": 0.00006, "B": 1050, "C": 138},
-                "SAE30": {"A": 0.0001, "B": 1200, "C": 140},
-                "SAE40": {"A": 0.00015, "B": 1300, "C": 142},
-                "SAE50": {"A": 0.0002, "B": 1400, "C": 145},
-                "SAE60": {"A": 0.00025, "B": 1500, "C": 148},
-                "VG220": {"A": 0.000064, "B": 1455, "C": 131},
-                "VG320": {"A": 0.000064, "B": 1520, "C": 131},
-                "VG460": {"A": 0.000064, "B": 1576, "C": 131}
-            }
-            
-            if self.oil_type not in viscosity_params:
-                raise ValueError(f"Oil type {self.oil_type} not supported")
-            
-            params = viscosity_params[self.oil_type]
-        
-        if T < params["C"]:
-            T = params["C"] + 1
-        
-        viscosity = params["A"] * math.exp(params["B"] / (T - params["C"]))
-        return max(1e-6, min(viscosity, 10.0))
 
     def _solve_nodal_network(
             self,
@@ -127,12 +95,9 @@ class NodalMatrixSolver(SolverBase):
             max_iter = max_iterations or self.config.max_iterations
             tol      = tolerance      or self.config.tolerance
 
-            # 3. Fluid properties
-            viscosity = self.calculate_viscosity(temperature)
-            fluid_properties = {
-                'density': self.oil_density,
-                'viscosity': viscosity
-            }
+            # 3. Fluid properties are now calculated in the SolverBase __init__
+            fluid_properties = self.fluid_properties
+            viscosity = fluid_properties['viscosity']
 
             # 4. Identify inlet/outlet nodes
             inlet_node   = network.inlet_node
@@ -536,10 +501,9 @@ class NodalMatrixSolver(SolverBase):
         Flow is distributed inversely proportional to the resistance of each path.
         """
         edge_flows = {conn.component.id: 0.0 for conn in network.connections}
-        fluid_properties = {
-            'density': self.oil_density,
-            'viscosity': self.calculate_viscosity(40.0)  # Assume 40C for initial viscosity
-        }
+        
+        # Use the solver's fluid properties, which are already calculated.
+        fluid_properties = self.fluid_properties
 
         # Estimate resistance for each component using differential method for consistency
         resistances = {}
@@ -550,58 +514,67 @@ class NodalMatrixSolver(SolverBase):
 
         # Find all paths from source to each sink using BFS
         all_paths = []
-        path_sink_mapping = []  # Track which sink each path leads to
-        
         for sink_node_id in sink_node_ids:
-            paths_to_sink = []
-            queue = [(source_node_id, [])]
-            visited = set()
+            # Use networkx for robust path finding if available, otherwise simple BFS
+            try:
+                import networkx as nx
+                G = network.to_networkx()
+                paths_to_sink = list(nx.all_simple_paths(G, source=source_node_id, target=sink_node_id))
+                
+                # The paths from networkx are lists of node IDs, convert to component IDs
+                for path_nodes in paths_to_sink:
+                    path_comps = []
+                    for i in range(len(path_nodes) - 1):
+                        conn = network.get_connection_by_nodes(path_nodes[i], path_nodes[i+1])
+                        if conn:
+                            path_comps.append(conn.component.id)
+                    all_paths.append(path_comps)
 
-            while queue:
-                curr_node_id, path = queue.pop(0)
+            except (ImportError, nx.NetworkXNoPath):
+                # Fallback to simple BFS if networkx is not available or no path is found
+                paths_to_sink = []
+                queue = [(source_node_id, [])]
+                visited = {source_node_id}
 
-                if curr_node_id == sink_node_id:
-                    paths_to_sink.append(path)
-                    continue
+                while queue:
+                    curr_node_id, path = queue.pop(0)
+                    if curr_node_id == sink_node_id:
+                        paths_to_sink.append(path)
+                        continue
 
-                if curr_node_id in visited:
-                    continue
-                visited.add(curr_node_id)
+                    for conn in network.connections:
+                        if conn.from_node.id == curr_node_id and conn.to_node.id not in visited:
+                            new_path = path + [conn.component.id]
+                            visited.add(conn.to_node.id)
+                            queue.append((conn.to_node.id, new_path))
+                all_paths.extend(paths_to_sink)
 
-                for conn in network.connections:
-                    if conn.from_node.id == curr_node_id and conn.to_node.id not in visited:
-                        new_path = path + [conn.component.id]
-                        queue.append((conn.to_node.id, new_path))
-            
-            # Add paths to this sink
-            for path in paths_to_sink:
-                all_paths.append(path)
-                path_sink_mapping.append(sink_node_id)
 
         if not all_paths:
-            # Fallback to uniform distribution if no paths are found
-            n_edges = len(network.connections)
-            if n_edges > 0:
-                initial_flow = Q_total / n_edges
-                for conn_id in edge_flows:
-                    edge_flows[conn_id] = initial_flow
-            return edge_flows
+            raise ValueError("Invalid network: ['No paths from inlet to outlets', f'Unreachable outlets: {sink_node_ids}'])")
 
         # Calculate conductance (inverse resistance) for each path
         path_conductances = []
         for path in all_paths:
-            path_resistance = sum(resistances[comp_id] for comp_id in path)
+            path_resistance = sum(resistances[comp_id] for comp_id in path if comp_id in resistances)
             path_conductance = 1.0 / max(path_resistance, self.config.min_resistance)
             path_conductances.append(path_conductance)
 
         # Distribute flow based on conductance weighting
         total_conductance = sum(path_conductances)
         
-        for i, path in enumerate(all_paths):
-            if total_conductance > 0:
+        if total_conductance > 0:
+            for i, path in enumerate(all_paths):
                 path_flow = Q_total * (path_conductances[i] / total_conductance)
                 for comp_id in path:
                     edge_flows[comp_id] += path_flow
+        else:
+            # If all paths have infinite resistance, fall back to uniform distribution
+            num_edges = len(network.connections)
+            if num_edges > 0:
+                uniform_flow = Q_total / num_edges
+                for conn_id in edge_flows:
+                    edge_flows[conn_id] = uniform_flow
 
         return edge_flows
     
