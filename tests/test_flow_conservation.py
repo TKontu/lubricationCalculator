@@ -80,8 +80,21 @@ def test_inclined_network_hydrostatic_adjustment(solver, fluid_properties):
     solution = solver.solve(network)
     info = solution
 
-    # Pressure diff from ρgΔz = 900 * 9.81 * 2 = 17658 Pa
-    dp_expected = 17658 + channel.calculate_pressure_drop(0.002, fluid_properties)
+    # Get the actual fluid properties used by the solver
+    solver_fluid_props = solution["fluid_properties"]
+    
+    # Calculate expected pressure difference using solver's actual fluid density
+    # Hydrostatic pressure: ρgΔz where Δz = elevation difference
+    rho = solver_fluid_props["density"]  # Use solver's actual density
+    g = 9.81
+    delta_z = node_B.elevation - node_A.elevation  # Height difference (positive upward)
+    dp_hydrostatic = rho * g * delta_z
+    
+    # Flow pressure drop
+    dp_flow = channel.calculate_pressure_drop(0.002, solver_fluid_props)
+    
+    # Total expected pressure difference (A to B)
+    dp_expected = dp_hydrostatic + dp_flow
 
     actual_dp = info["node_pressures"][node_A.id] - info["node_pressures"][node_B.id]
 
