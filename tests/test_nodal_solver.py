@@ -39,8 +39,8 @@ def test_two_node_case(simple_pipe_network):
     net, ch = simple_pipe_network
     sim_config = SimulationConfig(oil_density=DENSITY, oil_type="VG220", temperature=TEMPERATURE, total_flow_rate=Q_TOTAL, inlet_pressure=INLET_P, outlet_pressure=OUTLET_P)
     solver = NodalMatrixSolver(sim_config)
-    # monkey‐patch viscosity to fixed value
-    solver.calculate_viscosity = lambda T: VISCOSITY
+    # monkey-patch fluid properties for this test
+    solver.fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
 
     # call unified interface
     info = solver.solve(net)
@@ -89,7 +89,7 @@ def test_mass_conservation_and_branching():
 
     sim_config = SimulationConfig(oil_density=DENSITY, oil_type="VG220", temperature=TEMPERATURE, total_flow_rate=Q_TOTAL, inlet_pressure=INLET_P, outlet_pressure=OUTLET_P)
     solver = NodalMatrixSolver(sim_config)
-    solver.calculate_viscosity = lambda T: VISCOSITY
+    solver.fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
 
     info = solver.solve(net)
     flows = info.get("component_flows", {})

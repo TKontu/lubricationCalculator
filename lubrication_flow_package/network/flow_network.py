@@ -124,6 +124,14 @@ class FlowNetwork:
                 return conn
         return None
     
+    def to_networkx(self):
+        """Converts the flow network to a networkx graph."""
+        import networkx as nx
+        G = nx.Graph()
+        for conn in self.connections:
+            G.add_edge(conn.from_node.id, conn.to_node.id, component_id=conn.component.id)
+        return G
+
     def print_network_info(self):
         """Print network information"""
         print(f"\nNetwork: {self.name}")
