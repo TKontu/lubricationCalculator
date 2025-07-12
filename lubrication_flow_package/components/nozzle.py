@@ -47,7 +47,8 @@ class Nozzle(FlowComponent):
             NozzleType.SHARP_EDGED: 0.6,
             NozzleType.ROUNDED: 0.8,
             NozzleType.VENTURI: 0.95,
-            NozzleType.FLOW_NOZZLE: 0.98
+            NozzleType.FLOW_NOZZLE: 0.98,
+            NozzleType.STANDARD_ANGLE: 0.9, # A reasonable default
         }
         return defaults[self.nozzle_type]
     

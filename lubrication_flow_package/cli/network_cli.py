@@ -11,6 +11,8 @@ from ..config.network_config import NetworkConfigLoader, NetworkConfigSaver
 from ..config.simulation_config import SimulationConfig
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
 from ..solvers.nonlinear_solver import RobustNonLinearSolver
+from ...create_example_networks import create_simple_tree_network, create_complex_network_with_tee
+
 
 
 def create_network_template(output_file: str, format_type: str = 'json'):
@@ -372,6 +374,11 @@ Examples:
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate a network configuration file')
     validate_parser.add_argument('config_file', help='Network configuration file to validate')
+
+    # Create and Simulate command
+    create_and_simulate_parser = subparsers.add_parser('create-and-simulate', help='Create and simulate a network on the fly')
+    create_and_simulate_parser.add_argument('network_type', choices=['simple', 'complex'], help='Type of network to create')
+    create_and_simulate_parser.add_argument('--solver', default='nodal', choices=['nodal', 'robust_newton'], help='Solver type to use')
     
     args = parser.parse_args()
     
@@ -380,6 +387,27 @@ Examples:
     elif args.command == 'simulate':
         success = simulate_network(args.config_file, args.output, args.solver, args.solver_config, args.verbose)
         sys.exit(0 if success else 1)
+    elif args.command == 'create-and-simulate':
+        if args.network_type == 'simple':
+            network = create_simple_tree_network()
+        else:
+            network = create_complex_network_with_tee()
+        
+        sim_config = SimulationConfig(
+            total_flow_rate=0.02,
+            temperature=50.0,
+            inlet_pressure=250000.0
+        )
+        
+        solver_map = {
+            'nodal': NodalMatrixSolver,
+            'robust_newton': RobustNonLinearSolver
+        }
+        solver_class = solver_map.get(args.solver)
+        solver = solver_class(sim_config)
+        solution = solver.solve(network)
+        solver.print_results(network, solution)
+
     elif args.command == 'validate':
         success = validate_network_config(args.config_file)
         sys.exit(0 if success else 1)

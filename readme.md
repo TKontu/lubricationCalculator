@@ -52,10 +52,41 @@ Target precision +/- 1 l/min for end points, +/- 0,3 bar compared to measurement
 
 ### Running a Simulation
 
-You can run a simulation using the main script, which will solve the example networks:
+The easiest way to run a simulation is to use the built-in example networks. You can create and simulate them on the fly using the `create-and-simulate` command.
 
 ```bash
-python main.py
+# Simulate the simple example network
+python -m lubrication_flow_package.cli.network_cli create-and-simulate simple
+
+# Simulate the complex example network with the robust Newton solver
+python -m lubrication_flow_package.cli.network_cli create-and-simulate complex --solver robust_newton
+```
+
+### Building a Custom Network
+
+You can easily build your own custom networks using the `NetworkBuilder`. Here is an example of how to create a simple network:
+
+```python
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
+from lubrication_flow_package.config.simulation_config import SimulationConfig
+
+sim_config = SimulationConfig(
+    total_flow_rate=0.02,
+    temperature=50.0,
+    inlet_pressure=250000.0
+)
+
+builder = NetworkBuilder(sim_config)
+
+network = (builder
+    .set_inlet("inlet")
+    .add_pipe("inlet", "j1", length=5, diameter=0.1)
+    .add_pipe("j1", "out1", length=10, diameter=0.08)
+    .add_outlet("out1")
+    .build()
+)
+
+# This network object can now be used with a solver.
 ```
 
 ### Running Tests
