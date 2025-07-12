@@ -1,66 +1,70 @@
-# Task List / Backlog
+# Refactoring Plan: NetworkBuilder Implementation
 
-This list has been updated to prioritize critical solver fixes, code quality improvements, and future enhancements.
+This section outlines the plan to refactor the project by introducing a `NetworkBuilder` to centralize and simplify network creation.
 
-## High Priority: Critical Solver & Physics Fixes
+## Phase 1: Create the `NetworkBuilder` Foundation
+- [ ] **Create `network_builder.py`:** Create a new file in `lubrication_flow_package/utils/`.
+- [ ] **Define `NetworkBuilder` Class:**
+    - [ ] Initialize with an optional `SimulationConfig`.
+    - [ ] Hold a private `FlowNetwork` instance.
+    - [ ] Maintain an internal dictionary to track nodes by name.
+- [ ] **Implement Core Methods:**
+    - [ ] `_get_or_create_node(name: str)`: Private helper to manage node creation and prevent duplicates.
+    - [ ] `set_inlet(node_name: str)`: Method to define the network inlet.
+    - [ ] `add_outlet(node_name: str)`: Method to define network outlets.
+    - [ ] `build() -> FlowNetwork`: Finalize and return the `FlowNetwork` object.
 
-- [x] **Fix `RobustNonLinearSolver` Jacobian Formulation:**
-  - **Issue:** The current implementation creates a non-square Jacobian matrix, which is mathematically incorrect for the Newton-Raphson method.
-  - **Fix:** Modify `_evaluate_residual` and `_build_jacobian` to use `N-1` mass conservation equations, ensuring a square and solvable system. Replace the `lsqr` solver with the more appropriate `spsolve`.
-  - **Status:** Done. The Jacobian is now square.
+## Phase 2: Implement High-Level Component-Adding Methods
+- [ ] **`add_pipe(...)`:** Add a method to create a `Channel` between two nodes.
+- [ ] **`add_nozzle(...)`:** Add a method to create a `Nozzle`.
+- [ ] **`add_fitting(...)`:** Add a generic method for `Connector` components (e.g., elbows, valves).
+- [ ] **`add_tee_junction(...)`:** Implement a physically-aware method for T-junctions.
+    - [ ] Model the tee as a central node.
+    - [ ] Use three `Connector` instances with asymmetric, realistic loss coefficients (K-factors) to accurately model pressure drops for the run and branch paths.
 
-- [x] **Centralize and Correct Viscosity Calculation:**
-  - **Issue:** `SolverBase` uses a hardcoded placeholder viscosity, making `RobustNonLinearSolver` results incorrect. `NodalMatrixSolver` uses a separate, hardcoded internal table. This violates DRY and leads to incorrect physics.
-  - **Fix:** Create a single, robust viscosity calculation function in a central utility module. All solvers **must** call this function to get fluid properties. This ensures consistent and correct physics across the application.
-  - **Status:** Done.
+## Phase 3: Integrate the `NetworkBuilder` Across the Project
+- [ ] **Refactor `create_example_networks.py`:** Rewrite the script to use the `NetworkBuilder`.
+- [ ] **Update `main.py`:** Modify the main script to use the `NetworkBuilder`.
+- [ ] **Refactor Unit Tests:** Update all tests that create networks to use the `NetworkBuilder`.
 
-- [x] **Improve `RobustNonLinearSolver` Pressure Calculation:**
-  - **Issue:** The current BFS-based pressure calculation is susceptible to inaccuracies in networks with loops.
-  - **Fix:** After solving for flows, formulate and solve a separate linear system for all node pressures simultaneously to ensure global consistency.
-  - **Status:** Done.
+## Phase 4: Cleanup and Finalization
+- [ ] **Review `FlowNetwork` API:** Mark old methods as private to encourage builder usage.
+- [ ] **Update `readme.md`:** Add documentation for the new `NetworkBuilder` API.
 
-## Medium Priority: Code Quality and Refactoring
+---
 
-- [x] **Unify `print_results` Method in `SolverBase`:**
-  - **Issue:** `print_results` is duplicated across both solvers, making maintenance difficult. The method in `SolverBase` is abstract.
-  - **Fix:** Implement the `print_results` method fully in the `SolverBase` class. Remove the duplicate implementations from the subclasses.
-  - **Status:** Done.
+# Original Task List / Backlog
 
-- [x] **Externalize Fluid Data:**
-  - **Issue:** Viscosity parameters are hardcoded.
-  - **Fix:** Move all fluid property data to an external configuration file (e.g., `fluids.yaml`) and have the centralized viscosity function load it at runtime.
-  - **Status:** Done.
+## High Priority:
 
-- [x] **Improve Flow Initialization:**
-  - **Issue:** Both solvers use naive or overly complex initial flow guesses.
-  - **Fix:** Implement a consistent, topology-aware flow initialization method. A good approach is to use a single linear solve with estimated resistances.
-  - **Status:** Done.
-
-- [x] **Refine `NodalMatrixSolver` Resistance Calculation:**
-  - **Issue:** The finite-difference step (`delta_q`) is too large, potentially leading to inaccurate resistance values and slower convergence.
-  - **Fix:** Reduce the relative step size in `_calculate_component_resistance` from `1e-3` to `1e-6`.
-  - **Status:** Done.
-
-- [x] **Standardize Configuration:**
-  - **Issue:** Solver parameters are passed inconsistently.
-  - **Fix:** Enforce that all solver settings are managed exclusively through the `SolverConfig` object.
-  - **Status:** Done.
+- [ ] **Component Library Expansion:**
+  - [ ] Implement components so that nodes are automatically created with implemented components.
+    - [ ] T-junction = junction node and node at each end of each tee
+    - [ ] Pipe = nodes at both ends
+    - [ ] bend = nodes at both ends
+    - [ ] etc.
+    - [ ] Ensure that when components are connected to each other, the connected nodes merge to become a single node
+  - [ ] Implement `Pump` component with PQ-curve modeling.
+  - [ ] Implement `ThermalExchanger` and `VariableValve` components.
 
 ## Low Priority / Future Enhancements
 
 - [ ] **Component Library Expansion:**
+
   - [ ] Implement `Pump` component with PQ-curve modeling.
   - [ ] Implement `ThermalExchanger` and `VariableValve` components.
+
+- [ ] **Advanced Solver Features:**
+
+  - [ ] Implement Trust Region methods as an alternative to line search.
+  - [ ] Implement Broyden's method for cheaper Jacobian updates.
+
+- [ ] **GUI Improvements:**
+
+  - [ ] Refactor the GUI to use the unified solver interface.
+  - [ ] Stabilize the GUI data model and fix interaction bugs.
 
 - [ ] **Advanced Physics Models:**
   - [ ] Add support for transient simulations.
   - [ ] Add support for compressible flow.
   - [ ] Re-evaluate temperature-dependent viscosity during solver iterations.
-
-- [ ] **Advanced Solver Features:**
-  - [ ] Implement Trust Region methods as an alternative to line search.
-  - [ ] Implement Broyden's method for cheaper Jacobian updates.
-
-- [ ] **GUI Improvements:**
-  - [ ] Refactor the GUI to use the unified solver interface.
-  - [ ] Stabilize the GUI data model and fix interaction bugs.
