@@ -9,35 +9,42 @@ This list has been updated to prioritize critical solver fixes, code quality imp
   - **Fix:** Modify `_evaluate_residual` and `_build_jacobian` to use `N-1` mass conservation equations, ensuring a square and solvable system. Replace the `lsqr` solver with the more appropriate `spsolve`.
   - **Status:** Done. The Jacobian is now square.
 
-- [ ] **Centralize and Correct Viscosity Calculation:**
+- [x] **Centralize and Correct Viscosity Calculation:**
   - **Issue:** `SolverBase` uses a hardcoded placeholder viscosity, making `RobustNonLinearSolver` results incorrect. `NodalMatrixSolver` uses a separate, hardcoded internal table. This violates DRY and leads to incorrect physics.
   - **Fix:** Create a single, robust viscosity calculation function in a central utility module. All solvers **must** call this function to get fluid properties. This ensures consistent and correct physics across the application.
+  - **Status:** Done.
 
-- [ ] **Improve `RobustNonLinearSolver` Pressure Calculation:**
+- [x] **Improve `RobustNonLinearSolver` Pressure Calculation:**
   - **Issue:** The current BFS-based pressure calculation is susceptible to inaccuracies in networks with loops.
   - **Fix:** After solving for flows, formulate and solve a separate linear system for all node pressures simultaneously to ensure global consistency.
+  - **Status:** Done.
 
 ## Medium Priority: Code Quality and Refactoring
 
-- [ ] **Unify `print_results` Method in `SolverBase`:**
+- [x] **Unify `print_results` Method in `SolverBase`:**
   - **Issue:** `print_results` is duplicated across both solvers, making maintenance difficult. The method in `SolverBase` is abstract.
   - **Fix:** Implement the `print_results` method fully in the `SolverBase` class. Remove the duplicate implementations from the subclasses.
+  - **Status:** Done.
 
-- [ ] **Externalize Fluid Data:**
+- [x] **Externalize Fluid Data:**
   - **Issue:** Viscosity parameters are hardcoded.
   - **Fix:** Move all fluid property data to an external configuration file (e.g., `fluids.yaml`) and have the centralized viscosity function load it at runtime.
+  - **Status:** Done.
 
-- [ ] **Improve Flow Initialization:**
+- [x] **Improve Flow Initialization:**
   - **Issue:** Both solvers use naive or overly complex initial flow guesses.
   - **Fix:** Implement a consistent, topology-aware flow initialization method. A good approach is to use a single linear solve with estimated resistances.
+  - **Status:** Done.
 
-- [ ] **Refine `NodalMatrixSolver` Resistance Calculation:**
+- [x] **Refine `NodalMatrixSolver` Resistance Calculation:**
   - **Issue:** The finite-difference step (`delta_q`) is too large, potentially leading to inaccurate resistance values and slower convergence.
   - **Fix:** Reduce the relative step size in `_calculate_component_resistance` from `1e-3` to `1e-6`.
+  - **Status:** Done.
 
-- [ ] **Standardize Configuration:**
+- [x] **Standardize Configuration:**
   - **Issue:** Solver parameters are passed inconsistently.
   - **Fix:** Enforce that all solver settings are managed exclusively through the `SolverConfig` object.
+  - **Status:** Done.
 
 ## Low Priority / Future Enhancements
 

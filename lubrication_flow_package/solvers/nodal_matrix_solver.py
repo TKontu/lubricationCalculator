@@ -61,9 +61,7 @@ class NodalMatrixSolver(SolverBase):
             pump_flow_rate=self.sim_config.total_flow_rate,
             temperature=self.sim_config.temperature,
             pump_max_pressure=self.sim_config.inlet_pressure,
-            outlet_pressure=self.sim_config.outlet_pressure or 101325.0,
-            max_iterations=self.config.max_iterations,
-            tolerance=self.config.tolerance
+            outlet_pressure=self.sim_config.outlet_pressure or 101325.0
         )
         
         # Adapt the old solution_info to the new standard format
@@ -78,9 +76,7 @@ class NodalMatrixSolver(SolverBase):
             inlet_pressure: float = 200_000.0,
             outlet_pressure: float = 101_325.0,
             elevations: Optional[Dict[str, float]] = None,
-            pump_curve: Optional[Callable] = None,
-            max_iterations: Optional[int] = None,
-            tolerance: Optional[float] = None
+            pump_curve: Optional[Callable] = None
         ) -> Tuple[Dict[str, float], Dict]:
             """
             Unified nodal network solver that supports multiple outlets via the iterative solver.
@@ -91,8 +87,8 @@ class NodalMatrixSolver(SolverBase):
                 raise ValueError(f"Invalid network: {errors}")
 
             # 2. Defaults
-            max_iter = max_iterations or self.config.max_iterations
-            tol      = tolerance      or self.config.tolerance
+            max_iter = self.config.max_iterations
+            tol      = self.config.tolerance
 
             # 3. Fluid properties are now calculated in the SolverBase __init__
             fluid_properties = self.fluid_properties
@@ -112,10 +108,7 @@ class NodalMatrixSolver(SolverBase):
                 source_node_id=inlet_node.id,
                 sink_node_ids=[o.id for o in outlet_nodes],
                 Q_total=total_flow_rate,
-                fluid_properties=fluid_properties,
-                tol_flow=tol * 1e-3,
-                tol_pressure=tol * 1_000,
-                max_iter=max_iter
+                fluid_properties=fluid_properties
             )
 
             # 6. Build solution_info
@@ -155,9 +148,7 @@ class NodalMatrixSolver(SolverBase):
         pump_flow_rate: float,
         temperature: float,
         pump_max_pressure: float = 1e6,
-        outlet_pressure: float = 101_325.0,
-        max_iterations: Optional[int] = None,
-        tolerance: Optional[float] = None
+        outlet_pressure: float = 101_325.0
     ) -> Tuple[Dict[str, float], Dict]:
         """
         Fixed‐Q solver: pins outlet pressure, enforces pump_flow_rate, and returns
@@ -174,9 +165,7 @@ class NodalMatrixSolver(SolverBase):
             total_flow_rate=pump_flow_rate,
             temperature=temperature,
             inlet_pressure=0.0,         # unused by this path
-            outlet_pressure=outlet_pressure,
-            max_iterations=max_iterations,
-            tolerance=tolerance
+            outlet_pressure=outlet_pressure
         )
 
         # 3) Build the info dict the tests expect
@@ -205,7 +194,7 @@ class NodalMatrixSolver(SolverBase):
         dp0 = component.calculate_pressure_drop(Q_est, fluid_properties)
 
         # finite-difference step
-        delta_q = max(abs(Q_est) * 1e-3, 1e-8)
+        delta_q = max(abs(Q_est) * 1e-6, 1e-8)
 
         # forward/backwards ΔP
         dp_plus  = component.calculate_pressure_drop(Q_est + delta_q, fluid_properties)
@@ -222,10 +211,7 @@ class NodalMatrixSolver(SolverBase):
                              source_node_id: str,
                              sink_node_ids: List[str],
                              Q_total: float,
-                             fluid_properties: Dict,
-                             tol_flow: float = 1e-6,
-                             tol_pressure: float = 1e2,
-                             max_iter: int = 20) -> Tuple[Dict[str, float], Dict[str, float]]:
+                             fluid_properties: Dict) -> Tuple[Dict[str, float], Dict[str, float]]:
         """
         Solve the hydraulic network using iterative nodal-matrix method.
         
@@ -235,15 +221,15 @@ class NodalMatrixSolver(SolverBase):
             sink_node_ids: List of IDs of the sink nodes where flow exits
             Q_total: Total flow rate entering at source and exiting at sink (m³/s)
             fluid_properties: Dict with 'density' and 'viscosity' keys
-            tol_flow: Convergence tolerance for flow rates (m³/s)
-            tol_pressure: Convergence tolerance for pressure-flow law (Pa)
-            max_iter: Maximum number of iterations
             
         Returns:
             Tuple of (node_pressures, edge_flows) where:
             - node_pressures: Dict mapping node_id to pressure (Pa)
             - edge_flows: Dict mapping connection_id to flow rate (m³/s)
         """
+        tol_flow = self.config.tolerance * 1e-3
+        tol_pressure = self.config.tolerance * 1_000
+        max_iter = self.config.max_iterations
         # Validate inputs
         if source_node_id not in network.nodes:
             raise ValueError(f"Source node {source_node_id} not found in network")
