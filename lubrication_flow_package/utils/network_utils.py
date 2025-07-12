@@ -365,3 +365,87 @@ def get_adaptive_damping(iteration: int, max_iterations: int,
     damping = initial_damping + progress * (final_damping - initial_damping)
     
     return damping
+
+
+def initialize_flows_from_linear_solve(network: 'FlowNetwork', total_flow_rate: float, fluid_properties: Dict, min_resistance: float) -> Dict[str, float]:
+    """
+    Provides an initial guess for the flow rates by solving a simplified
+    linearized version of the network. This version correctly handles
+    multiple outlets by connecting them to a single virtual atmosphere node.
+    """
+    from scipy.sparse import lil_matrix
+    from scipy.sparse.linalg import spsolve
+    import numpy as np
+
+    num_connections = len(network.connections)
+    if num_connections == 0:
+        return {}
+
+    # 1. Estimate a linear resistance for each *real* component
+    resistances = {}
+    for conn in network.connections:
+        # A simple estimation of differential resistance at Q=0
+        delta_q = 1e-6
+        dp = conn.component.calculate_pressure_drop(delta_q, fluid_properties)
+        resistances[conn.component.id] = max(dp / delta_q, min_resistance)
+
+    # 2. Build the structure for the linear solve, including a virtual node
+    virtual_node_id = "VIRTUAL_ATMOSPHERE_NODE"
+    node_ids = list(network.nodes.keys()) + [virtual_node_id]
+    node_to_idx = {node_id: i for i, node_id in enumerate(node_ids)}
+
+    # The reference node is the new virtual node
+    ref_idx = node_to_idx[virtual_node_id]
+    active_indices = [i for i, node_id in enumerate(node_ids) if i != ref_idx]
+    idx_map = {full_idx: active_idx for active_idx, full_idx in enumerate(active_indices)}
+    
+    n_active = len(active_indices)
+    G = lil_matrix((n_active, n_active))
+    b = np.zeros(n_active)
+
+    # 3. Build the conductance matrix for the *real* connections
+    for conn in network.connections:
+        conductance = 1.0 / resistances[conn.component.id]
+        i = node_to_idx[conn.from_node.id]
+        j = node_to_idx[conn.to_node.id]
+
+        i_act, j_act = idx_map[i], idx_map[j]
+        G[i_act, i_act] += conductance
+        G[j_act, j_act] += conductance
+        G[i_act, j_act] -= conductance
+        G[j_act, i_act] -= conductance
+
+    # 4. Add virtual connections from each outlet to the virtual atmosphere node
+    virtual_conductance = 1.0 / min_resistance
+    for outlet_node in network.outlet_nodes:
+        i = node_to_idx[outlet_node.id]
+        i_act = idx_map[i]
+        G[i_act, i_act] += virtual_conductance
+
+    # 5. Set the total flow rate at the inlet node
+    inlet_idx = node_to_idx[network.inlet_node.id]
+    inlet_act = idx_map[inlet_idx]
+    b[inlet_act] = total_flow_rate
+
+    # 6. Solve the linear system G*P = b for the node pressures
+    try:
+        pressures_active = spsolve(G.tocsr(), b)
+        
+        pressures = np.zeros(len(node_ids))
+        for i, active_idx in enumerate(active_indices):
+            pressures[active_idx] = pressures_active[i]
+        
+        # 7. Calculate initial flows from the solved pressures for the *real* connections
+        q_initial = {}
+        for conn in network.connections:
+            p_from = pressures[node_to_idx[conn.from_node.id]]
+            p_to = pressures[node_to_idx[conn.to_node.id]]
+            resistance = resistances[conn.component.id]
+            q_initial[conn.component.id] = (p_from - p_to) / resistance
+        
+        return q_initial
+
+    except Exception as e:
+        # Fallback if the linear solve fails
+        print(f"Warning: Linear initialization failed ({e}). Falling back to simple initialization.")
+        return {conn.component.id: total_flow_rate / num_connections for conn in network.connections}

@@ -23,6 +23,7 @@ from ..network.connection import Connection
 from .config import SolverConfig
 from ..config.simulation_config import SimulationConfig
 from .base import SolverBase
+from ..utils.network_utils import initialize_flows_from_linear_solve
 
 
 class NodalMatrixSolver(SolverBase):
@@ -494,86 +495,14 @@ class NodalMatrixSolver(SolverBase):
     def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_ids: List[str],
                           Q_total: float) -> Dict[str, float]:
         """
-        Initialize edge flows using a resistance-based approach for multiple sinks.
-        Flow is distributed inversely proportional to the resistance of each path.
+        Initialize edge flows using the unified linear solve method.
         """
-        edge_flows = {conn.component.id: 0.0 for conn in network.connections}
-        
-        # Use the solver's fluid properties, which are already calculated.
-        fluid_properties = self.fluid_properties
-
-        # Estimate resistance for each component using differential method for consistency
-        resistances = {}
-        for conn in network.connections:
-            resistances[conn.component.id] = self._calculate_component_resistance(
-                conn.component, fluid_properties, self.config.dq_absolute
-            )
-
-        # Find all paths from source to each sink using BFS
-        all_paths = []
-        for sink_node_id in sink_node_ids:
-            # Use networkx for robust path finding if available, otherwise simple BFS
-            try:
-                import networkx as nx
-                G = network.to_networkx()
-                paths_to_sink = list(nx.all_simple_paths(G, source=source_node_id, target=sink_node_id))
-                
-                # The paths from networkx are lists of node IDs, convert to component IDs
-                for path_nodes in paths_to_sink:
-                    path_comps = []
-                    for i in range(len(path_nodes) - 1):
-                        conn = network.get_connection_by_nodes(path_nodes[i], path_nodes[i+1])
-                        if conn:
-                            path_comps.append(conn.component.id)
-                    all_paths.append(path_comps)
-
-            except (ImportError, nx.NetworkXNoPath):
-                # Fallback to simple BFS if networkx is not available or no path is found
-                paths_to_sink = []
-                queue = [(source_node_id, [])]
-                visited = {source_node_id}
-
-                while queue:
-                    curr_node_id, path = queue.pop(0)
-                    if curr_node_id == sink_node_id:
-                        paths_to_sink.append(path)
-                        continue
-
-                    for conn in network.connections:
-                        if conn.from_node.id == curr_node_id and conn.to_node.id not in visited:
-                            new_path = path + [conn.component.id]
-                            visited.add(conn.to_node.id)
-                            queue.append((conn.to_node.id, new_path))
-                all_paths.extend(paths_to_sink)
-
-
-        if not all_paths:
-            raise ValueError("Invalid network: ['No paths from inlet to outlets', f'Unreachable outlets: {sink_node_ids}'])")
-
-        # Calculate conductance (inverse resistance) for each path
-        path_conductances = []
-        for path in all_paths:
-            path_resistance = sum(resistances[comp_id] for comp_id in path if comp_id in resistances)
-            path_conductance = 1.0 / max(path_resistance, self.config.min_resistance)
-            path_conductances.append(path_conductance)
-
-        # Distribute flow based on conductance weighting
-        total_conductance = sum(path_conductances)
-        
-        if total_conductance > 0:
-            for i, path in enumerate(all_paths):
-                path_flow = Q_total * (path_conductances[i] / total_conductance)
-                for comp_id in path:
-                    edge_flows[comp_id] += path_flow
-        else:
-            # If all paths have infinite resistance, fall back to uniform distribution
-            num_edges = len(network.connections)
-            if num_edges > 0:
-                uniform_flow = Q_total / num_edges
-                for conn_id in edge_flows:
-                    edge_flows[conn_id] = uniform_flow
-
-        return edge_flows
+        return initialize_flows_from_linear_solve(
+            network,
+            Q_total,
+            self.fluid_properties,
+            self.config.min_resistance
+        )
     
     def _compute_resistance(self, component, flow: float, fluid_properties: Dict) -> float:
         """
