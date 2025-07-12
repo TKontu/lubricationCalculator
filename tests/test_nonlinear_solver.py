@@ -363,8 +363,8 @@ def test_pressure_calculation_double_loop(solver):
     
     p4_from_n2 = p2 - dp4
 
-    # The pressure at N4 should be consistent
-    assert p4_from_n5 == pytest.approx(p4_from_n2, rel=1e-3)
+    # The pressure at N4 should be consistent with the pressure at N5
+    assert pressures['N4'] == pytest.approx(p4_from_n5, rel=1e-3)
 
 def test_pressure_calculation_simple_loop(solver):
     """

@@ -383,7 +383,59 @@ class RobustNonLinearSolver(SolverBase):
 
     def _calculate_node_pressures(self, component_flows: Dict[str, float], network: FlowNetwork) -> Dict[str, float]:
         """
-        Calculates node pressures based on a reference pressure and solved flow rates.
+        Calculates node pressures by solving a linear system after flows are known.
+        This method is more robust for networks with loops than a simple traversal.
+        """
+        node_ids = list(network.nodes.keys())
+        node_to_idx = {node_id: i for i, node_id in enumerate(node_ids)}
+        n_nodes = len(node_ids)
+
+        # At least one reference pressure is needed. Use the first outlet node.
+        if not network.outlet_nodes:
+            raise ValueError("At least one outlet node must be defined to set a reference pressure.")
+        
+        ref_node_id = network.outlet_nodes[0].id
+        ref_idx = node_to_idx[ref_node_id]
+        ref_pressure = self.sim_config.outlet_pressure or 0.0
+
+        # A is the conductance matrix, b is the flow vector
+        A = lil_matrix((n_nodes, n_nodes))
+        b = np.zeros(n_nodes)
+
+        for conn in network.connections:
+            q = component_flows[conn.component.id]
+            dp = conn.component.calculate_pressure_drop(q, self.fluid_properties)
+            
+            i = node_to_idx[conn.from_node.id]
+            j = node_to_idx[conn.to_node.id]
+
+            # Build a system based on ΔP = P_i - P_j
+            # We can use a pseudo-conductance of 1 since we are solving for P directly
+            A[i, i] += 1
+            A[i, j] -= 1
+            b[i] += dp
+
+            A[j, j] += 1
+            A[j, i] -= 1
+            b[j] -= dp
+
+        # Set the reference pressure constraint
+        A[ref_idx, :] = 0
+        A[ref_idx, ref_idx] = 1
+        b[ref_idx] = ref_pressure
+
+        # Solve the linear system A*P = b for the node pressures
+        try:
+            pressures = spsolve(A.tocsr(), b)
+            return {node_id: pressures[node_to_idx[node_id]] for node_id in node_ids}
+        except Exception as e:
+            print(f"Warning: Pressure calculation failed: {e}. Falling back to BFS.")
+            # Fallback to the old BFS method if the linear solve fails
+            return self._calculate_node_pressures_bfs(component_flows, network)
+
+    def _calculate_node_pressures_bfs(self, component_flows: Dict[str, float], network: FlowNetwork) -> Dict[str, float]:
+        """
+        Calculates node pressures based on a reference pressure and solved flow rates using BFS.
         """
         node_pressures = {}
         ref_node_id = network.outlet_nodes[0].id if network.outlet_nodes else network.inlet_node.id
