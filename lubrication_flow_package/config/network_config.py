@@ -14,6 +14,7 @@ from ..components.channel import Channel
 from ..components.nozzle import Nozzle, NozzleType, StandardAngleSprayNozzle
 from ..components.connector import Connector, ConnectorType
 from .simulation_config import SimulationConfig
+from ..utils.network_builder import NetworkBuilder
 
 
 @dataclass
@@ -163,79 +164,66 @@ class NetworkConfigLoader:
 
     @staticmethod
     def build_network(config: NetworkConfig) -> tuple[FlowNetwork, SimulationConfig]:
-        """Build FlowNetwork and SimulationConfig from NetworkConfig"""
-        network = FlowNetwork(config.network_name)
-        
-        # Create nodes
-        node_map = {}
+        """Build FlowNetwork and SimulationConfig from NetworkConfig using NetworkBuilder"""
+        sim_config = SimulationConfig.from_dict(config.simulation)
+        builder = NetworkBuilder(sim_config)
+
+        # Create a map of component data for easy lookup
+        component_map = {comp['id']: comp for comp in config.components}
+
+        # Set inlet and outlets first
         for node_data in config.nodes:
-            node = network.create_node(
-                name=node_data.get('name', node_data['id']),
-                elevation=node_data.get('elevation', 0.0)
-            )
-            node_map[node_data['id']] = node
+            node_id = node_data['id']
+            if node_data.get('type') == 'inlet':
+                builder.set_inlet(node_id)
+            elif node_data.get('type') == 'outlet':
+                builder.add_outlet(node_id, pressure=node_data.get('pressure', 101325.0))
+
+        # Add components via connections
+        for conn_data in config.connections:
+            from_node = conn_data['from_node']
+            to_node = conn_data['to_node']
+            comp_id = conn_data['component']
             
-            # Set inlet/outlet based on type
-            node_type = node_data.get('type', 'junction')
-            if node_type == 'inlet':
-                network.set_inlet(node)
-            elif node_type == 'outlet':
-                network.add_outlet(node)
-        
-        # Create components
-        component_map = {}
-        for comp_data in config.components:
-            comp_type = comp_data['type']
-            comp_id = comp_data['id']
-            comp_name = comp_data.get('name', comp_id)
+            if comp_id not in component_map:
+                raise ValueError(f"Component '{comp_id}' referenced in connections not found in components list.")
+            
+            comp_data = component_map[comp_id]
+            comp_type = comp_data.get('type')
             
             if comp_type == 'channel':
-                component = Channel(
-                    diameter=comp_data['diameter'],
+                builder.add_pipe(
+                    from_node_name=from_node,
+                    to_node_name=to_node,
                     length=comp_data['length'],
-                    name=comp_name
+                    diameter=comp_data['diameter'],
+                    roughness=comp_data.get('roughness', 0.00015),
+                    name=comp_data.get('name', comp_id)
                 )
             elif comp_type == 'nozzle':
-                nt = comp_data.get('nozzle_type', 'sharp_edged')
-                if nt == NozzleType.STANDARD_ANGLE.value:
-                    # expect a "size" field in inches (10,15,20,...)
-                    size = int(comp_data['size'])
-                    spray_angle = comp_data.get('spray_angle', 95.0)
-                    component = StandardAngleSprayNozzle(
-                        size=size,
-                        spray_angle=spray_angle,
-                        name=comp_name
-                    )
-                else:
-                    nozzle_type = NozzleType(nt)
-                    component = Nozzle(
-                        diameter=comp_data['diameter'],
-                        nozzle_type=nozzle_type,
-                        name=comp_name
-                    )
-            elif comp_type == 'connector':
-                connector_type = ConnectorType(comp_data.get('connector_type', 't_junction'))
-                component = Connector(
+                builder.add_nozzle(
+                    from_node_name=from_node,
+                    to_node_name=to_node,
                     diameter=comp_data['diameter'],
-                    connector_type=connector_type,
-                    name=comp_name
+                    nozzle_type=NozzleType(comp_data.get('nozzle_type', 'standard_angle')),
+                    name=comp_data.get('name', comp_id)
+                )
+            elif comp_type == 'connector':
+                builder.add_fitting(
+                    from_node_name=from_node,
+                    to_node_name=to_node,
+                    connector_type=ConnectorType(comp_data.get('connector_type')),
+                    diameter=comp_data['diameter'],
+                    name=comp_data.get('name', comp_id)
                 )
             else:
                 raise ValueError(f"Unknown component type: {comp_type}")
-            
-            component.id = comp_id  # Override generated ID
-            component_map[comp_id] = component
+
+        # Build the network
+        network = builder.build()
+        network.name = config.network_name
         
-        # Create connections
-        for conn_data in config.connections:
-            from_node = node_map[conn_data['from_node']]
-            to_node = node_map[conn_data['to_node']]
-            component = component_map[conn_data['component']]
-            
-            network.connect_components(from_node, to_node, component)
-        
-        # Create simulation config and convert units
-        sim_config = SimulationConfig.from_dict(config.simulation)
+        # Convert units in simulation config
         sim_config.total_flow_rate = NetworkConfigLoader._convert_flow_rate_to_m3s(
             sim_config.total_flow_rate, sim_config.input_flow_rate_unit
         )

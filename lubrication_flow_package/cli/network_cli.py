@@ -12,144 +12,53 @@ from ..config.simulation_config import SimulationConfig
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
 from ..solvers.nonlinear_solver import RobustNonLinearSolver
 from ...create_example_networks import create_simple_tree_network, create_complex_network_with_tee
+from ..utils.network_builder import NetworkBuilder
+from ..components.base import NozzleType, ConnectorType
 
+
+
+from ..utils.network_builder import NetworkBuilder
+from ..components.base import NozzleType, ConnectorType
 
 
 def create_network_template(output_file: str, format_type: str = 'json'):
     """Create a template network configuration file"""
     
-    template_config = {
-        "network_name": "Example Network",
-        "description": "A simple example network with two outlets",
-        "nodes": [
-            {
-                "id": "inlet",
-                "name": "Inlet",
-                "elevation": 0.0,
-                "type": "inlet",
-                "x": 0.0,
-                "y": 0.0
-            },
-            {
-                "id": "junction1",
-                "name": "Junction 1",
-                "elevation": 1.0,
-                "type": "junction",
-                "x": 10.0,
-                "y": 0.0
-            },
-            {
-                "id": "outlet1",
-                "name": "Outlet 1",
-                "elevation": 2.0,
-                "type": "outlet",
-                "x": 20.0,
-                "y": 5.0
-            },
-            {
-                "id": "outlet2",
-                "name": "Outlet 2",
-                "elevation": 1.5,
-                "type": "outlet",
-                "x": 20.0,
-                "y": -5.0
-            }
-        ],
-        "components": [
-            {
-                "id": "main_channel",
-                "name": "Main Channel",
-                "type": "channel",
-                "diameter": 0.08,
-                "length": 10.0
-            },
-            {
-                "id": "branch1_channel",
-                "name": "Branch 1 Channel",
-                "type": "channel",
-                "diameter": 0.05,
-                "length": 8.0
-            },
-            {
-                "id": "branch2_channel",
-                "name": "Branch 2 Channel",
-                "type": "channel",
-                "diameter": 0.04,
-                "length": 6.0
-            },
-            {
-                "id": "nozzle1",
-                "name": "Nozzle 1",
-                "type": "nozzle",
-                "diameter": 0.025,
-                "nozzle_type": "venturi"
-            },
-            {
-                "id": "nozzle2",
-                "name": "Nozzle 2",
-                "type": "nozzle",
-                "diameter": 0.020,
-                "nozzle_type": "sharp_edged"
-            }
-        ],
-        "connections": [
-            {
-                "from_node": "inlet",
-                "to_node": "junction1",
-                "component": "main_channel"
-            },
-            {
-                "from_node": "junction1",
-                "to_node": "outlet1",
-                "component": "branch1_channel"
-            },
-            {
-                "from_node": "junction1",
-                "to_node": "outlet2",
-                "component": "branch2_channel"
-            }
-        ],
-        "simulation": {
-            "flow_parameters": {
-                "total_flow_rate": 0.015,
-                "temperature": 40.0,
-                "inlet_pressure": 200000.0,
-                "outlet_pressure": None
-            },
-            "fluid_properties": {
-                "oil_density": 900.0,
-                "oil_type": "SAE30"
-            },
-            "solver_settings": {
-                "max_iterations": 100,
-                "tolerance": 1e-6,
-                "relaxation_factor": 0.8
-            },
-            "output_settings": {
-                "output_units": "metric",
-                "detailed_output": True,
-                "save_results": False,
-                "results_file": None
-            }
-        },
-        "metadata": {
-            "created_by": "network_cli",
-            "version": "1.0",
-            "notes": "Template network for demonstration"
-        }
-    }
-    
-    from ..config.network_config import NetworkConfig
-    config = NetworkConfig(
-        network_name=template_config["network_name"],
-        description=template_config["description"],
-        nodes=template_config["nodes"],
-        components=template_config["components"],
-        connections=template_config["connections"],
-        simulation=template_config["simulation"],
-        metadata=template_config["metadata"]
+    # Create a default simulation config
+    sim_config = SimulationConfig(
+        total_flow_rate=0.015,
+        temperature=40.0,
+        inlet_pressure=200000.0,
+        oil_density=900.0,
+        oil_type="SAE30"
     )
+
+    # Use the builder to create a simple, representative network
+    builder = NetworkBuilder(sim_config)
+    network = (builder
+        .set_inlet("inlet")
+        .add_pipe("inlet", "j1", length=10, diameter=0.08, name="main_channel")
+        .add_pipe("j1", "out1", length=8, diameter=0.05, name="branch1_channel")
+        .add_nozzle("out1", "nozzle1", diameter=0.025, nozzle_type=NozzleType.ROUNDED)
+        .add_pipe("j1", "out2", length=6, diameter=0.04, name="branch2_channel")
+        .add_nozzle("out2", "nozzle2", diameter=0.020, nozzle_type=NozzleType.SHARP_EDGED)
+        .add_outlet("nozzle1")
+        .add_outlet("nozzle2")
+        .build()
+    )
+    network.name = "Example Network"
     
+    # Convert the generated network to a NetworkConfig object
+    config = NetworkConfigSaver.from_network(network, sim_config)
+    
+    # Customize description and metadata
+    config.description = "A simple example network with two outlets"
+    config.metadata = {
+        "created_by": "network_cli",
+        "version": "1.1",
+        "notes": "Template network generated from NetworkBuilder"
+    }
+
     if format_type.lower() == 'json':
         NetworkConfigSaver.save_json(config, output_file)
         print(f"JSON template created: {output_file}")

@@ -101,6 +101,13 @@ class FlowNetwork:
         
         return len(errors) == 0, errors
     
+    def get_node(self, name: str) -> Optional[Node]:
+        """Get a node by its name."""
+        for node in self.nodes.values():
+            if node.name == name:
+                return node
+        return None
+    
     def get_junction_nodes(self) -> List[Node]:
         """Get nodes that are junctions (more than 2 connections)"""
         junction_nodes = []

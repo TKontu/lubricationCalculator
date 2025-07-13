@@ -6,6 +6,7 @@ from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
 from lubrication_flow_package.config.simulation_config import SimulationConfig
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 # Physical constants for test
 DENSITY = 900.0      # kg/m³
@@ -21,19 +22,17 @@ def simple_pipe_network():
     Two nodes connected by a single channel.
     Analytical ΔP = (128 μ L / (π D^4)) · Q
     """
-    net = FlowNetwork("single_pipe") 
-    n0 = net.create_node(name="inlet", elevation=0.0)
-    n1 = net.create_node(name="outlet", elevation=0.0)
-    net.set_inlet(n0)
-    net.add_outlet(n1)
-
-    # geometry chosen so that R = 128μL/(πD⁴) is nice
-    dia = 0.02   # m
-    length = 1.0 # m
-    ch = Channel(diameter=dia, length=length, name="ch0")
-    net.connect_components(n0, n1, ch)
-
-    return net, ch
+    builder = NetworkBuilder()
+    network = (builder
+        .set_inlet("inlet")
+        .add_outlet("outlet")
+        .add_pipe("inlet", "outlet", length=1.0, diameter=0.02, name="ch0")
+        .build()
+    )
+    inlet_id = network.get_node("inlet").id
+    outlet_id = network.get_node("outlet").id
+    ch = network.get_connection_by_nodes(inlet_id, outlet_id).component
+    return network, ch
 
 def test_two_node_case(simple_pipe_network):
     net, ch = simple_pipe_network
@@ -70,28 +69,30 @@ def test_mass_conservation_and_branching():
     """
     Simple T‐junction: inlet splits equally into two identical branches.
     """
-    net = FlowNetwork("t_junction")
-    n0 = net.create_node(name="inlet", elevation=0.0)
-    n1 = net.create_node(name="junction", elevation=0.0)
-    n2 = net.create_node(name="out1", elevation=0.0)
-    n3 = net.create_node(name="out2", elevation=0.0)
-    net.set_inlet(n0)
-    net.add_outlet(n2); net.add_outlet(n3)
+    builder = NetworkBuilder()
+    network = (builder
+        .set_inlet("inlet")
+        .add_outlet("out1")
+        .add_outlet("out2")
+        .add_pipe("inlet", "junction", length=0.5, diameter=0.02, name="main")
+        .add_pipe("junction", "out1", length=0.8, diameter=0.015, name="b1")
+        .add_pipe("junction", "out2", length=0.8, diameter=0.015, name="b2")
+        .build()
+    )
+    inlet_id = network.get_node("inlet").id
+    junction_id = network.get_node("junction").id
+    out1_id = network.get_node("out1").id
+    out2_id = network.get_node("out2").id
 
-    # identical channels
-    ch_main = Channel(diameter=0.02, length=0.5, name="main")
-    ch1 = Channel(diameter=0.015, length=0.8, name="b1")
-    ch2 = Channel(diameter=0.015, length=0.8, name="b2")
-
-    net.connect_components(n0, n1, ch_main)
-    net.connect_components(n1, n2, ch1)
-    net.connect_components(n1, n3, ch2)
+    ch_main = network.get_connection_by_nodes(inlet_id, junction_id).component
+    ch1 = network.get_connection_by_nodes(junction_id, out1_id).component
+    ch2 = network.get_connection_by_nodes(junction_id, out2_id).component
 
     sim_config = SimulationConfig(oil_density=DENSITY, oil_type="VG220", temperature=TEMPERATURE, total_flow_rate=Q_TOTAL, inlet_pressure=INLET_P, outlet_pressure=OUTLET_P)
     solver = NodalMatrixSolver(sim_config)
     solver.fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
 
-    info = solver.solve(net)
+    info = solver.solve(network)
     flows = info.get("component_flows", {})
 
     # mass conservation at junction: main = b1 + b2
@@ -105,5 +106,5 @@ def test_mass_conservation_and_branching():
 
     # pressures are monotonic: P0 > Pjunction > Poutlets
     P = info["node_pressures"]
-    assert P[n0.id] > P[n1.id] > P[n2.id]
-    assert P[n1.id] > P[n3.id]
+    assert P[network.get_node("inlet").id] > P[network.get_node("junction").id] > P[network.get_node("out1").id]
+    assert P[network.get_node("junction").id] > P[network.get_node("out2").id]

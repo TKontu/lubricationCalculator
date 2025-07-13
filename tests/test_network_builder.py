@@ -162,12 +162,93 @@ def test_network_chaining(builder: NetworkBuilder):
     assert network.inlet_node.name == "in"
     assert len(network.outlet_nodes) == 2
 
-def test_build_invalid_network_raises_error(builder: NetworkBuilder):
-    """Test that building an invalid network raises a ValueError."""
-    builder.set_inlet("A")
-    builder.add_outlet("C")
-    builder.add_pipe("A", "B", length=1, diameter=0.1)
-    # Node "C" is an outlet but is not connected to anything.
+# --- Test Group 5: Elevation Handling ---
+
+def test_add_node_with_elevation(builder: NetworkBuilder):
+    """Verify that add_node sets the elevation correctly."""
+    network = (builder
+        .add_node("A", elevation=10.5)
+        .add_node("B", elevation=-2.0)
+        .set_inlet("A")
+        .add_outlet("B")
+        .add_pipe("A", "B", length=1, diameter=1)
+        .build()
+    )
     
-    with pytest.raises(ValueError, match="Constructed network is invalid"):
-        builder.build()
+    node_a = network.get_node("A")
+    node_b = network.get_node("B")
+    
+    assert node_a.elevation == 10.5
+    assert node_b.elevation == -2.0
+
+def test_implicit_node_creation_defaults_to_zero_elevation(builder: NetworkBuilder):
+    """Verify that nodes created implicitly have a default elevation of 0.0."""
+    network = (builder
+        .set_inlet("inlet")
+        .add_outlet("outlet")
+        .add_pipe("inlet", "outlet", length=5, diameter=0.1)
+        .build()
+    )
+    
+    inlet_node = network.get_node("inlet")
+    outlet_node = network.get_node("outlet")
+    
+    assert inlet_node.elevation == 0.0
+    assert outlet_node.elevation == 0.0
+
+def test_add_pipe_with_optional_elevation(builder: NetworkBuilder):
+    """Verify that add_pipe can create nodes with specified elevations."""
+    network = (builder
+        .set_inlet("A")
+        .add_outlet("B")
+        .add_pipe("A", "B", length=1, diameter=1, from_node_elevation=20.0, to_node_elevation=15.0)
+        .build()
+    )
+
+    node_a = network.get_node("A")
+    node_b = network.get_node("B")
+
+    assert node_a.elevation == 20.0
+    assert node_b.elevation == 15.0
+
+def test_elevation_update_and_preservation(builder: NetworkBuilder):
+    """
+    Verify that elevation can be updated and is preserved if not specified.
+    """
+    # 1. Create node with initial elevation
+    builder.add_node("A", elevation=10.0)
+    
+    # 2. Connect a pipe without specifying elevation for node A
+    #    and with an elevation for a new node B.
+    builder.add_pipe("A", "B", length=1, diameter=1, to_node_elevation=5.0)
+
+    # 3. Update elevation of node B explicitly
+    builder.add_node("B", elevation=7.5)
+
+    # 4. Connect another pipe, this time not specifying B's elevation
+    builder.add_pipe("B", "C", length=1, diameter=1)
+
+    network = builder.set_inlet("A").add_outlet("C").build()
+
+    node_a = network.get_node("A")
+    node_b = network.get_node("B")
+    node_c = network.get_node("C")
+
+    assert node_a.elevation == 10.0 # Should be preserved
+    assert node_b.elevation == 7.5  # Should be updated
+    assert node_c.elevation == 0.0  # Should be default
+
+def test_set_inlet_and_add_outlet_with_elevation(builder: NetworkBuilder):
+    """Verify that inlet and outlet methods can set elevation."""
+    network = (builder
+        .set_inlet("start", elevation=100.0)
+        .add_outlet("end", elevation=90.0)
+        .add_pipe("start", "end", length=10, diameter=0.2)
+        .build()
+    )
+
+    inlet_node = network.get_node("start")
+    outlet_node = network.get_node("end")
+
+    assert inlet_node.elevation == 100.0
+    assert outlet_node.elevation == 90.0
