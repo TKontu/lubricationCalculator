@@ -11,7 +11,6 @@ from ..config.network_config import NetworkConfigLoader, NetworkConfigSaver
 from ..config.simulation_config import SimulationConfig
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
 from ..solvers.nonlinear_solver import RobustNonLinearSolver
-from ...create_example_networks import create_simple_tree_network, create_complex_network_with_tee
 from ..utils.network_builder import NetworkBuilder
 from ..components.base import NozzleType, ConnectorType
 
