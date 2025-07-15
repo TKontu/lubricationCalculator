@@ -129,6 +129,43 @@ class SolverBase(ABC):
         print(f"  {'-'*25} {'-'*20} {'-'*25}")
         print(f"  {'Total Outlet Flow':<25} {total_outlet_flow_disp:<20.3f}")
 
+        # --- Path Analysis ---
+        print(f"\n{'='*80}")
+        print("PATH ANALYSIS")
+        print(f"{'='*80}")
+        print(f"  {'Path to Outlet':<25} {'Length (m)':<15} {'Weighted Dia (mm)':<20} {'Min Dia (mm)':<15}")
+        print(f"  {'-'*25} {'-'*15} {'-'*20} {'-'*15}")
+
+        paths = network.get_paths_to_outlets()
+        for path in paths:
+            if not path:
+                continue
+            
+            outlet_name = path[-1].to_node.name
+            path_length = sum(getattr(conn.component, 'length', 0) for conn in path)
+            
+            # Calculate weighted diameter
+            total_length = 0
+            weighted_dia_sum = 0
+            min_diameter = float('inf')
+
+            for conn in path:
+                comp = conn.component
+                length = getattr(comp, 'length', 0)
+                diameter = getattr(comp, 'diameter', float('inf'))
+                
+                if length > 0 and diameter != float('inf'):
+                    total_length += length
+                    weighted_dia_sum += length * diameter
+                
+                if diameter != float('inf'):
+                    min_diameter = min(min_diameter, diameter)
+
+            weighted_diameter = weighted_dia_sum / total_length if total_length > 0 else 0
+            
+            print(f"  {outlet_name:<25} {path_length:<15.2f} {weighted_diameter * 1000:<20.2f} {min_diameter * 1000:<15.2f}")
+
+
         # --- Pressure and Flow Details ---
         print(f"\n{'='*80}")
         print("PRESSURE AND FLOW DETAILS")
