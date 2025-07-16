@@ -1,3 +1,4 @@
+
 """
 CLI commands for network configuration and simulation
 """
@@ -11,7 +12,7 @@ from ..config.network_config import NetworkConfigLoader, NetworkConfigSaver
 from ..config.simulation_config import SimulationConfig
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
 from ..solvers.nonlinear_solver import RobustNonLinearSolver
-from ..solvers.tree_solver import NonLinearTreeSolver
+from ..solvers.tree_solver import TreeSolver
 from ..utils.network_builder import NetworkBuilder
 from ..components.base import NozzleType, ConnectorType
 
@@ -127,25 +128,19 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
         solver_map = {
             'nodal': NodalMatrixSolver,
             'robust_newton': RobustNonLinearSolver,
-            'tree_nonlinear': NonLinearTreeSolver
+            'tree_nonlinear': TreeSolver
         }
         solver_class = solver_map.get(solver_type)
         if not solver_class:
             print(f"Unknown solver type: {solver_type}")
             return False
 
-        # Load optional solver config from file or from the main config
-        solver_config = None
-        if solver_config_file:
-            from ..solvers.config import SolverConfig
-            solver_config = SolverConfig.from_yaml(solver_config_file)
-        elif hasattr(config, 'simulation') and hasattr(config.simulation, 'solver_settings') and config.simulation.solver_settings:
-            from ..solvers.config import SolverConfig
-            # Create SolverConfig from the dict in the loaded network config
-            solver_config = SolverConfig(**config.simulation.solver_settings)
+        # Progress callback
+        def progress_callback(message):
+            print(f"[Solver Progress] {message}")
 
         # Instantiate and run the solver using the unified interface
-        solver = solver_class(sim_config, solver_config)
+        solver = solver_class(sim_config, progress_callback=progress_callback if verbose else None)
         solution = solver.solve(network)
         
         print(f"Simulation completed with {solver_type} solver.")
@@ -197,6 +192,7 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
             print(f"Warning: Could not save results: {e}")
     
     return True
+
 
 
 def validate_network_config(config_file: str):

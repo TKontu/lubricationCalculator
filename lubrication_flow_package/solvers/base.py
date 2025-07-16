@@ -3,12 +3,11 @@ Base classes for all hydraulic network solvers.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 
 from ..config.simulation_config import SimulationConfig
 from ..network.flow_network import FlowNetwork
 from ..utils.viscosity import calculate_viscosity
-from .config import SolverConfig
 
 
 class SolverBase(ABC):
@@ -20,19 +19,18 @@ class SolverBase(ABC):
     calling application (e.g., the CLI or GUI).
     """
 
-    def __init__(self, sim_config: SimulationConfig, solver_config: Optional[SolverConfig] = None):
+    def __init__(self, sim_config: SimulationConfig, progress_callback: Optional[Callable[[str], None]] = None):
         """
         Initializes the solver.
 
         Args:
             sim_config: The simulation configuration object, containing physical
-                        parameters of the system (e.g., flow rate, fluid properties).
-            solver_config: An optional configuration object for tuning the solver's
-                           numerical behavior (e.g., tolerances, max iterations).
-                           If None, the solver should use its default configuration.
+                        parameters of the system (e.g., flow rate, fluid properties)
+                        and solver settings.
+            progress_callback: An optional callable to report progress updates.
         """
         self.sim_config = sim_config
-        self.config = solver_config if solver_config else self.get_default_solver_config()
+        self.progress_callback = progress_callback
         
         # Centralized fluid property calculation
         viscosity = calculate_viscosity(
@@ -44,6 +42,11 @@ class SolverBase(ABC):
             'density': self.sim_config.oil_density,
             'viscosity': viscosity
         }
+
+    def _report_progress(self, message: str):
+        """Reports progress if a callback is provided."""
+        if self.progress_callback:
+            self.progress_callback(message)
 
     @abstractmethod
     def solve(self, network: FlowNetwork) -> Dict:
@@ -216,11 +219,6 @@ class SolverBase(ABC):
         
         print(f"\n{'='*80}\n")
 
-    def get_default_solver_config(self) -> SolverConfig:
-        """
-        Returns a default SolverConfig instance for the specific solver.
-        This can be overridden by subclasses to provide different defaults.
-        """
-        return SolverConfig()
+    
 
     

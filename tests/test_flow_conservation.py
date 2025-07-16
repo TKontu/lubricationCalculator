@@ -4,7 +4,7 @@ from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.components.connector import Connector
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
-from lubrication_flow_package.solvers.config import SolverConfig
+
 from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 # Helper to create a simple two-node one-channel network

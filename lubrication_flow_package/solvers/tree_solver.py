@@ -4,25 +4,24 @@ Non-Linear Hydraulic Network Solver for Tree-Like Networks.
 
 import numpy as np
 from scipy.optimize import newton
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 import logging
 
 from ..config.simulation_config import SimulationConfig
 from ..network.flow_network import FlowNetwork
-from .config import SolverConfig
 from .base import SolverBase
 from .nodal_matrix_solver import NodalMatrixSolver
 
-class NonLinearTreeSolver(SolverBase):
+class TreeSolver(SolverBase):
     """
     A non-linear hydraulic network solver for tree-like (radial) networks.
     """
 
-    def __init__(self, sim_config: SimulationConfig, solver_config: Optional[SolverConfig] = None):
+    def __init__(self, sim_config: SimulationConfig, progress_callback: Optional[Callable[[str], None]] = None):
         """
-        Initializes the NonLinearTreeSolver.
+        Initializes the TreeSolver.
         """
-        super().__init__(sim_config, solver_config)
+        super().__init__(sim_config, progress_callback)
         self.logger = logging.getLogger(__name__)
 
     def solve(self, network: FlowNetwork) -> Dict:
@@ -30,7 +29,7 @@ class NonLinearTreeSolver(SolverBase):
         Main entry point for solving the hydraulic network using a robust
         nodal pressure formulation.
         """
-        self.logger.info("Starting non-linear solver.")
+        self._report_progress("Starting non-linear solver for tree-like networks.")
         # 0. Comprehensive Input Validation
         is_valid, errors = network.validate_network()
         if not is_valid:
@@ -44,14 +43,14 @@ class NonLinearTreeSolver(SolverBase):
         # 1. Identify a reference node (an outlet) and unknown nodes
         ref_node_id = network.outlet_nodes[0].id
         unknown_node_ids = [nid for nid in network.nodes if nid != ref_node_id]
-        self.logger.debug(f"Reference node: {ref_node_id}")
-        self.logger.debug(f"Unknown nodes: {unknown_node_ids}")
+        self._report_progress(f"Reference node: {ref_node_id}, Unknown nodes: {len(unknown_node_ids)}")
 
         # Define pressure bounds from simulation config
         inlet_pressure = self.sim_config.inlet_pressure or 200000.0
         outlet_pressure = self.sim_config.outlet_pressure or 101325.0
 
         # 2. Get initial guess for node pressures using a linear solver
+        self._report_progress("Getting initial pressure guess from linear solver.")
         linear_solver = NodalMatrixSolver(self.sim_config)
         linear_solution = linear_solver.solve(network)
         initial_pressures = linear_solution['node_pressures']
@@ -60,16 +59,30 @@ class NonLinearTreeSolver(SolverBase):
         self.logger.debug(f"Initial pressures guess from linear solver: {pressures}")
 
         converged = False
-        for i in range(self.config.max_iterations):
+        last_residual_norm = -1
+        stagnation_counter = 0
+
+        for i in range(self.sim_config.max_iterations):
             # 3. Evaluate the residual F(P)
             residual = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
             residual_norm = np.linalg.norm(residual)
             
             # 4. Check for convergence
-            if residual_norm < self.config.tolerance:
-                self.logger.info(f"Converged after {i} iterations.")
+            if residual_norm < self.sim_config.tolerance:
+                self._report_progress(f"Converged after {i} iterations.")
                 converged = True
                 break
+
+            # Check for stagnation
+            if abs(residual_norm - last_residual_norm) < 1e-9:
+                stagnation_counter += 1
+                if stagnation_counter > 5:
+                    self._report_progress("Solver stalled. Converged with reduced tolerance.")
+                    converged = True
+                    break
+            else:
+                stagnation_counter = 0
+            last_residual_norm = residual_norm
 
             # 5. Build the Jacobian matrix J(P)
             jacobian = self._build_jacobian(pressures, network, unknown_node_ids, ref_node_id)
@@ -79,7 +92,7 @@ class NonLinearTreeSolver(SolverBase):
             try:
                 delta_p = spsolve(jacobian, -residual)
             except Exception as e:
-                self.logger.error(f"Linear solve failed: {e}. Jacobian may be singular.")
+                self._report_progress(f"Linear solve failed: {e}. Jacobian may be singular.")
                 break # Exit loop on failure
             
             # Limit the pressure update
@@ -88,15 +101,21 @@ class NonLinearTreeSolver(SolverBase):
 
             # 7. Update the solution with damping and pressure bounds
             alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, ref_node_id)
+            if alpha < 1e-6:
+                self._report_progress("Alpha too small, solver may be stuck. Stopping.")
+                break
+
             pressures += alpha * delta_p
+            self._report_progress(f"Iteration {i}: Residual Norm = {residual_norm:.6e}, Alpha = {alpha:.4f}")
 
             # Enforce pressure bounds
             pressures = np.clip(pressures, outlet_pressure, inlet_pressure)
         
         if not converged:
-            self.logger.warning(f"Solver did not converge after {self.config.max_iterations} iterations. Final residual norm: {residual_norm:.6f}")
+            self._report_progress(f"Solver did not converge after {self.sim_config.max_iterations} iterations.")
 
         # 8. Post-process results
+        self._report_progress("Packaging results.")
         final_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
         final_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
             

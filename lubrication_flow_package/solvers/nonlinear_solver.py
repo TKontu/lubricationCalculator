@@ -11,11 +11,10 @@ import numpy as np
 import networkx as nx
 from scipy.sparse import csr_matrix, linalg, lil_matrix
 from scipy.sparse.linalg import spsolve
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Callable
 
 from ..config.simulation_config import SimulationConfig
 from ..network.flow_network import FlowNetwork
-from .config import SolverConfig
 from .base import SolverBase
 from ..utils.network_utils import initialize_flows_from_linear_solve
 
@@ -29,18 +28,17 @@ class RobustNonLinearSolver(SolverBase):
     of equations that describe the network's physics.
     """
 
-    def __init__(self, sim_config: SimulationConfig, solver_config: Optional[SolverConfig] = None):
+    def __init__(self, sim_config: SimulationConfig, progress_callback: Optional[Callable[[str], None]] = None):
         """
         Initializes the RobustNonLinearSolver.
 
         Args:
             sim_config: The simulation configuration object.
-            config: A SolverConfig object containing solver parameters.
         """
-        super().__init__(sim_config, solver_config)
-        self.convergence_config = self.config.convergence
-        self.line_search_config = self.config.line_search
-        self.jacobian_config = self.config.jacobian
+        super().__init__(sim_config, progress_callback)
+        self.convergence_config = self.sim_config.convergence
+        self.line_search_config = self.sim_config.line_search
+        self.jacobian_config = self.sim_config.jacobian
 
     def solve(self, network: FlowNetwork) -> Dict:
         """
@@ -53,6 +51,7 @@ class RobustNonLinearSolver(SolverBase):
             A dictionary containing the solution, including flows, pressures,
             and convergence information.
         """
+        self._report_progress("Starting robust non-linear solver.")
         # 1. Initialize flow vector Q
         q_initial = self._initialize_flows(network)
         q_current = q_initial
@@ -62,12 +61,26 @@ class RobustNonLinearSolver(SolverBase):
         
         converged = False
         iterations = 0
+        last_residual_norm = -1
+        stagnation_counter = 0
 
         # 3. Start Newton-Raphson iteration
-        for i in range(self.config.max_iterations):
+        for i in range(self.sim_config.max_iterations):
             iterations = i + 1
             # 4. Evaluate the residual F(Q)
             residual = self._evaluate_residual(q_current, network, cycles)
+            residual_norm = np.linalg.norm(residual)
+
+            # Check for stagnation
+            if abs(residual_norm - last_residual_norm) < 1e-9:
+                stagnation_counter += 1
+                if stagnation_counter > 5:
+                    self._report_progress("Solver stalled. Converged with reduced tolerance.")
+                    converged = True
+                    break
+            else:
+                stagnation_counter = 0
+            last_residual_norm = residual_norm
 
             # 5. Build the Jacobian matrix J(Q)
             jacobian = self._build_jacobian(q_current, network, cycles)
@@ -77,15 +90,19 @@ class RobustNonLinearSolver(SolverBase):
 
             # 7. Check for convergence
             if self._check_convergence(residual, delta_q, q_current):
-                print(f"Converged after {i} iterations.")
+                self._report_progress(f"Converged after {i} iterations.")
                 converged = True
                 break
 
             # 8. Update the solution with line search
             alpha = self._line_search(q_current, delta_q, residual, network, cycles)
+            if alpha < 1e-6:
+                self._report_progress("Alpha too small, solver may be stuck. Stopping.")
+                break
             q_current = q_current + alpha * delta_q
+            self._report_progress(f"Iteration {i}: Residual Norm = {residual_norm:.6e}, Alpha = {alpha:.4f}")
         else:
-            print("Solver did not converge within the maximum number of iterations.")
+            self._report_progress("Solver did not converge within the maximum number of iterations.")
 
         # 9. Post-process results
         results = self._package_results(q_current, network, converged, iterations)
@@ -130,7 +147,7 @@ class RobustNonLinearSolver(SolverBase):
             network,
             self.sim_config.total_flow_rate,
             self.fluid_properties,
-            self.config.min_resistance
+            self.sim_config.min_resistance
         )
         
         # Convert the dictionary to a numpy array in the correct order
@@ -259,7 +276,7 @@ class RobustNonLinearSolver(SolverBase):
         dp_plus = component.calculate_pressure_drop(q_est + delta_q, fluid_properties)
         dp_minus = component.calculate_pressure_drop(q_est - delta_q, fluid_properties)
         resistance = (dp_plus - dp_minus) / (2.0 * delta_q)
-        return max(resistance, self.config.min_resistance)
+        return max(resistance, self.sim_config.min_resistance)
 
     def _solve_linear_system(self, jacobian: csr_matrix, residual: np.ndarray) -> np.ndarray:
         """
@@ -283,7 +300,7 @@ class RobustNonLinearSolver(SolverBase):
         Checks if the solution has converged based on multiple criteria.
         """
         residual_norm = np.linalg.norm(residual)
-        if residual_norm >= self.config.convergence.get("residual_tolerance", 1e-6):
+        if residual_norm >= self.sim_config.convergence.get("residual_tolerance", 1e-6):
             return False
 
         q_norm = np.linalg.norm(q_current)
@@ -291,7 +308,7 @@ class RobustNonLinearSolver(SolverBase):
         
         if q_norm > 1e-9: # Avoid division by zero for zero flow
             relative_change = delta_q_norm / q_norm
-            if relative_change >= self.config.convergence.get("relative_tolerance", 1e-6):
+            if relative_change >= self.sim_config.convergence.get("relative_tolerance", 1e-6):
                 return False
 
         return True

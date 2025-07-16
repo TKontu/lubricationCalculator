@@ -20,7 +20,6 @@ from lubrication_flow_package.components.connector import Connector, ConnectorTy
 from ..network.flow_network import FlowNetwork
 from ..network.node import Node
 from ..network.connection import Connection
-from .config import SolverConfig
 from ..config.simulation_config import SimulationConfig
 from .base import SolverBase
 from ..utils.network_utils import initialize_flows_from_linear_solve
@@ -38,17 +37,15 @@ class NodalMatrixSolver(SolverBase):
     """
     
     def __init__(self, sim_config: SimulationConfig, 
-                 solver_config: Optional[SolverConfig] = None,
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the nodal matrix solver.
         
         Args:
             sim_config: The simulation configuration object.
-            solver_config: Optional solver configuration object.
             logger: Optional logger for debugging output.
         """
-        super().__init__(sim_config, solver_config)
+        super().__init__(sim_config)
         self.gravity = 9.81
         self.logger = logger or logging.getLogger(__name__)
 
@@ -87,8 +84,8 @@ class NodalMatrixSolver(SolverBase):
                 raise ValueError(f"Invalid network: {errors}")
 
             # 2. Defaults
-            max_iter = self.config.max_iterations
-            tol      = self.config.tolerance
+            max_iter = self.sim_config.max_iterations
+            tol      = self.sim_config.tolerance
 
             # 3. Fluid properties are now calculated in the SolverBase __init__
             fluid_properties = self.fluid_properties
@@ -204,7 +201,7 @@ class NodalMatrixSolver(SolverBase):
         R = (dp_plus - dp_minus) / (2.0 * delta_q)
 
         # floor
-        return max(R, self.config.min_resistance)
+        return max(R, self.sim_config.min_resistance)
     
     def _solve_nodal_iterative(self,
                              network: FlowNetwork,
@@ -227,9 +224,9 @@ class NodalMatrixSolver(SolverBase):
             - node_pressures: Dict mapping node_id to pressure (Pa)
             - edge_flows: Dict mapping connection_id to flow rate (m³/s)
         """
-        tol_flow = self.config.tolerance * 1e-3
-        tol_pressure = self.config.tolerance * 1_000
-        max_iter = self.config.max_iterations
+        tol_flow = self.sim_config.tolerance * 1e-3
+        tol_pressure = self.sim_config.tolerance * 1_000
+        max_iter = self.sim_config.max_iterations
         # Validate inputs
         if source_node_id not in network.nodes:
             raise ValueError(f"Source node {source_node_id} not found in network")
@@ -263,7 +260,7 @@ class NodalMatrixSolver(SolverBase):
         self.logger.info(f"Source: {source_node_id}, Sinks: {sink_node_ids}, Q_total: {Q_total:.6f} m³/s")
         
         # Iterative solution
-        relaxation_factor = self.config.relaxation_factor
+        relaxation_factor = self.sim_config.relaxation_factor
         last_max_flow_change = float('inf')
         flow_changes = []
 
@@ -277,16 +274,16 @@ class NodalMatrixSolver(SolverBase):
                 
                 # For nodal pressure-based methods, use average resistance for conductance
                 # This ensures mass conservation: when Q = G*(P1-P2), total flows balance
-                if abs(flow) > self.config.dq_absolute:
+                if abs(flow) > self.sim_config.dq_absolute:
                     dp = conn.component.calculate_pressure_drop(flow, fluid_properties)
                     resistance = dp / abs(flow)  # Average resistance
                 else:
                     # For very small flows, use differential resistance as approximation
                     resistance = self._calculate_component_resistance(
-                        conn.component, fluid_properties, self.config.dq_absolute
+                        conn.component, fluid_properties, self.sim_config.dq_absolute
                     )
                 
-                conductance = 1.0 / max(resistance, self.config.min_resistance)
+                conductance = 1.0 / max(resistance, self.sim_config.min_resistance)
                 
                 edge_resistances[conn.component.id] = resistance
                 edge_conductances[conn.component.id] = conductance
@@ -487,7 +484,7 @@ class NodalMatrixSolver(SolverBase):
             network,
             Q_total,
             self.fluid_properties,
-            self.config.min_resistance
+            self.sim_config.min_resistance
         )
     
     def _compute_resistance(self, component, flow: float, fluid_properties: Dict) -> float:
