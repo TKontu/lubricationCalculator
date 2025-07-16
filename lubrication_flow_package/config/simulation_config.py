@@ -22,7 +22,7 @@ class SimulationConfig:
     viscosity_model: str = "vogel"
     
     # Solver settings
-    max_iterations: int = 100
+    max_iterations: int = 10000
     tolerance: float = 1e-6
     relaxation_factor: float = 0.8
     
@@ -83,7 +83,7 @@ class SimulationConfig:
             oil_density=fluid_props.get('oil_density', 900.0),
             oil_type=fluid_props.get('oil_type', 'SAE30'),
             viscosity_model=fluid_props.get('viscosity_model', 'vogel'),
-            max_iterations=solver_settings.get('max_iterations', 100),
+            max_iterations=solver_settings.get('max_iterations', 10000),
             tolerance=solver_settings.get('tolerance', 1e-6),
             relaxation_factor=solver_settings.get('relaxation_factor', 0.8),
             output_units=output_settings.get('output_units', 'metric'),

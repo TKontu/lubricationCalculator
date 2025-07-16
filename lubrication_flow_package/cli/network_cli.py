@@ -211,7 +211,7 @@ def validate_network_config(config_file: str):
             print(f"Unsupported file format: {file_path.suffix}")
             return False
         
-        print(f"📁 Validating configuration: {config.network_name}")
+        print(f"Validating configuration: {config.network_name}")
         
         # Build network
         network, sim_config = NetworkConfigLoader.build_network(config)
