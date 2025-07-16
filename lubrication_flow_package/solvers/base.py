@@ -82,6 +82,24 @@ class SolverBase(ABC):
         connection_flows = solution.get('component_flows', {})
         solution_info = solution
 
+        # Calculate total outlet flow first
+        outlet_nodes = network.outlet_nodes
+        total_outlet_flow = 0
+        if outlet_nodes:
+            for outlet_node in outlet_nodes:
+                for conn in network.connections:
+                    if conn.to_node.id == outlet_node.id:
+                        total_outlet_flow += connection_flows.get(conn.component.id, 0.0)
+
+        # Ensure pressure drops are calculated before path analysis
+        if 'pressure_drops' not in solution_info:
+            solution_info['pressure_drops'] = {}
+            for connection in network.connections:
+                component = connection.component
+                flow_rate = connection_flows.get(component.id, 0.0)
+                dp = component.calculate_pressure_drop(flow_rate, self.fluid_properties)
+                solution_info['pressure_drops'][component.id] = dp
+
         print(f"\n{'='*80}")
         print(f"NETWORK FLOW SIMULATION RESULTS")
         print(f"{'='*80}")
@@ -90,13 +108,11 @@ class SolverBase(ABC):
         print(f"  Network Name:      {network.name}")
         print(f"  Temperature:       {solution_info.get('temperature', 'N/A'):.1f}°C")
         print(f"  Oil Type:          {self.sim_config.oil_type}")
-        print(f"  Oil Density:       {self.sim_config.oil_density:.1f} kg/m³")
+        print(f"  Oil Density:   {self.sim_config.oil_density:.1f} kg/m³")
         print(f"  Dynamic Viscosity: {solution_info.get('viscosity', 'N/A'):.6f} Pa·s")
         
         # --- Simulation Summary ---
-        flow_rate_key = 'total_flow_rate' if 'total_flow_rate' in solution_info else 'actual_flow_rate'
-        total_flow_rate = solution_info.get(flow_rate_key, 0.0)
-        total_flow_rate_disp, q_unit_str_disp = convert_flow_rate(total_flow_rate, q_unit_str)
+        total_flow_rate_disp, q_unit_str_disp = convert_flow_rate(total_outlet_flow, q_unit_str)
         print(f"\n  Total System Flow Rate: {total_flow_rate_disp:.2f} {q_unit_str_disp}")
         
         inlet_pressure_key = 'inlet_pressure' if 'inlet_pressure' in solution_info else 'required_inlet_pressure'
@@ -115,17 +131,13 @@ class SolverBase(ABC):
         print(f"  {'Outlet Node':<25} {'Flow Rate (' + q_unit_str + ')':<20} {'Percentage of Total':<25}")
         print(f"  {'-'*25} {'-'*20} {'-'*25}")
         
-        outlet_nodes = network.outlet_nodes
-        total_outlet_flow = 0
-        
         if outlet_nodes:
             for outlet_node in outlet_nodes:
                 for conn in network.connections:
                     if conn.to_node.id == outlet_node.id:
                         flow = connection_flows.get(conn.component.id, 0.0)
-                        total_outlet_flow += flow
                         flow_disp, _ = convert_flow_rate(flow, q_unit_str)
-                        percentage = (flow / total_flow_rate * 100) if total_flow_rate > 0 else 0
+                        percentage = (flow / total_outlet_flow * 100) if total_outlet_flow > 0 else 0
                         print(f"  {outlet_node.name:<25} {flow_disp:<20.3f} {percentage:>24.1f}%")
         
         total_outlet_flow_disp, _ = convert_flow_rate(total_outlet_flow, q_unit_str)
@@ -136,8 +148,11 @@ class SolverBase(ABC):
         print(f"\n{'='*80}")
         print("PATH ANALYSIS")
         print(f"{'='*80}")
-        print(f"  {'Path to Outlet':<25} {'Length (m)':<15} {'Weighted Dia (mm)':<20} {'Min Dia (mm)':<15}")
-        print(f"  {'-'*25} {'-'*15} {'-'*20} {'-'*15}")
+        header = (f"  {'Path to Outlet':<25} {'Outlet Flow (' + q_unit_str + ')':<20} "
+                  f"{'Total Pressure Drop (' + p_unit_str + ')':<25} {'Length (m)':<15} "
+                  f"{'Weighted Dia (mm)':<20} {'Min Dia (mm)':<15}")
+        print(header)
+        print(f"  {'-'*25} {'-'*20} {'-'*25} {'-'*15} {'-'*20} {'-'*15}")
 
         paths = network.get_paths_to_outlets()
         for path in paths:
@@ -147,6 +162,14 @@ class SolverBase(ABC):
             outlet_name = path[-1].to_node.name
             path_length = sum(getattr(conn.component, 'length', 0) for conn in path)
             
+            # Calculate total pressure drop for the path
+            path_pressure_drop = sum(solution_info.get('pressure_drops', {}).get(conn.component.id, 0) for conn in path)
+            path_pressure_drop_disp, _ = convert_pressure(path_pressure_drop, p_unit_str)
+
+            # Get outlet flow rate
+            outlet_flow = connection_flows.get(path[-1].component.id, 0.0)
+            outlet_flow_disp, _ = convert_flow_rate(outlet_flow, q_unit_str)
+
             # Calculate weighted diameter
             total_length = 0
             weighted_dia_sum = 0
@@ -166,21 +189,15 @@ class SolverBase(ABC):
 
             weighted_diameter = weighted_dia_sum / total_length if total_length > 0 else 0
             
-            print(f"  {outlet_name:<25} {path_length:<15.2f} {weighted_diameter * 1000:<20.2f} {min_diameter * 1000:<15.2f}")
+            print(f"  {outlet_name:<25} {outlet_flow_disp:<20.3f} "
+                  f"{path_pressure_drop_disp:<25.2f} {path_length:<15.2f} "
+                  f"{weighted_diameter * 1000:<20.2f} {min_diameter * 1000:<15.2f}")
 
 
         # --- Pressure and Flow Details ---
         print(f"\n{'='*80}")
         print("PRESSURE AND FLOW DETAILS")
         print(f"{'='*80}")
-        
-        if 'pressure_drops' not in solution_info:
-            solution_info['pressure_drops'] = {}
-            for connection in network.connections:
-                component = connection.component
-                flow_rate = connection_flows.get(component.id, 0.0)
-                dp = component.calculate_pressure_drop(flow_rate, self.fluid_properties)
-                solution_info['pressure_drops'][component.id] = dp
         
         print(f"  {'Component':<20} {'Type':<15} {'Flow Rate (' + q_unit_str + ')':<20} {'Pressure Drop (' + p_unit_str + ')':<20}")
         print(f"  {'-'*20} {'-'*15} {'-'*20} {'-'*20}")

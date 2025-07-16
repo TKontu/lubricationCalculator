@@ -33,6 +33,7 @@ class TreeSolver(SolverBase):
         nodal pressure formulation.
         """
         log_records = []
+        warnings = []
         self._report_progress("Starting non-linear solver for tree-like networks.")
         # 0. Comprehensive Input Validation
         is_valid, errors = network.validate_network()
@@ -95,7 +96,7 @@ class TreeSolver(SolverBase):
             if abs(residual_norm - last_residual_norm) < 1e-9:
                 stagnation_counter += 1
                 if stagnation_counter > 5:
-                    self._report_progress("Solver stalled. Converged with reduced tolerance.")
+                    warnings.append("Solver stalled. Converged with reduced tolerance.")
                     converged = True
                     break
             else:
@@ -113,6 +114,7 @@ class TreeSolver(SolverBase):
                 self._report_progress(f"Linear solve failed: {e}. Jacobian may be singular.")
                 log_records.append(f"ERROR: Linear solve failed: {e}. Jacobian may be singular.")
                 log_records.append(f"Jacobian matrix:\n{jacobian.toarray()}")
+                warnings.append(f"Linear solve failed: {e}.")
                 break # Exit loop on failure
             
             # Adaptive step size limiting based on residual norm
@@ -123,6 +125,7 @@ class TreeSolver(SolverBase):
             alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, ref_node_id)
             if alpha < 1e-8:
                 self._report_progress("Alpha too small, solver may be stuck. Stopping.")
+                warnings.append("Line search failed: alpha too small.")
                 break
 
             pressures += alpha * delta_p
@@ -148,28 +151,16 @@ class TreeSolver(SolverBase):
         
         if not converged:
             self._report_progress(f"Solver did not converge after {self.sim_config.max_iterations} iterations.")
+            warnings.append("Solver did not converge within the maximum number of iterations.")
 
         # 8. Post-process results
         self._report_progress("Packaging results.")
         final_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
         final_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
             
-        component_flows = {}
-        for conn in network.connections:
-            p_from = final_pressures[conn.from_node.id]
-            p_to = final_pressures[conn.to_node.id]
-            dp = p_from - p_to
-            component_flows[conn.component.id] = conn.component.calculate_flow_rate(dp, self.fluid_properties)
-
-        return {
-            "converged": converged,
-            "iterations": iterations_run + 1,
-            "component_flows": component_flows,
-            "node_pressures": final_pressures,
-            "inlet_pressure": final_pressures[network.inlet_node.id],
-            "temperature": self.sim_config.temperature,
-            "viscosity": self.fluid_properties['viscosity'],
-        }
+        solution = self._get_final_solution(converged, iterations_run + 1, final_pressures, network)
+        solution["warnings"].extend(warnings)
+        return solution
 
     def _evaluate_residual(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> np.ndarray:
         """
@@ -300,3 +291,40 @@ class TreeSolver(SolverBase):
                 
         # If line search fails, return very small step
         return max(alpha, 1e-8)
+
+    def _get_final_solution(self, converged: bool, iterations: int, pressures: Dict, network: FlowNetwork) -> Dict:
+        """
+        Packages the final results into the standard solution dictionary format.
+        """
+        # Calculate component flows from the final pressures
+        component_flows = {}
+        for conn in network.connections:
+            p_from = pressures[conn.from_node.id]
+            p_to = pressures[conn.to_node.id]
+            dp = p_from - p_to
+            component_flows[conn.component.id] = conn.component.calculate_flow_rate(dp, self.fluid_properties)
+            
+        # Calculate total flow rate at the inlet
+        total_flow_rate = 0
+        if network.inlet_node:
+            for conn in network.connections:
+                if conn.from_node.id == network.inlet_node.id:
+                    total_flow_rate += component_flows[conn.component.id]
+        
+        # Assemble the solution dictionary
+        solution = {
+            "converged": converged,
+            "iterations": iterations,
+            "component_flows": component_flows,
+            "node_pressures": pressures,
+            "inlet_pressure": pressures.get(network.inlet_node.id, 0.0),
+            "total_flow_rate": total_flow_rate,
+            "temperature": self.sim_config.temperature,
+            "viscosity": self.fluid_properties['viscosity'],
+            "warnings": []
+        }
+        
+        if not converged:
+            solution["warnings"].append("Solver did not converge within the specified tolerance or iterations.")
+            
+        return solution
