@@ -101,6 +101,30 @@ class Nozzle(FlowComponent):
         dp_minor = K * density * velocity * velocity / 2.0
 
         return dp_pipe + dp_minor
+
+    def calculate_flow_rate(self, pressure_drop: float, fluid_properties: Dict) -> float:
+        """
+        Calculate flow rate for a given pressure drop.
+        This is the inverse of the pressure drop calculation.
+        """
+        if pressure_drop <= 0:
+            return 0.0
+
+        density = fluid_properties['density']
+        area = self.get_flow_area()
+
+        if self.nozzle_type == NozzleType.VENTURI:
+            K = ((1.0 / self.discharge_coeff ** 2) - 1.0) * 0.1
+        else:
+            K = (1.0 / self.discharge_coeff ** 2) - 1.0
+
+        if K <= 0:
+            return float('inf')
+
+        # Invert the orifice equation: dP = K * rho * Q^2 / (2 * A^2)
+        # Q = A * sqrt(2 * dP / (K * rho))
+        flow_rate = area * math.sqrt(2 * pressure_drop / (K * density))
+        return flow_rate
     
 
 class StandardAngleSprayNozzle(Nozzle):
@@ -171,3 +195,9 @@ class StandardAngleSprayNozzle(Nozzle):
         """
         p_psi = pressure_drop / self.PSI_TO_PA
         return self._q40_m3s * math.sqrt(max(p_psi, 0.0) / 40.0)
+
+    def calculate_flow_rate(self, pressure_drop: float, fluid_properties: Dict) -> float:
+        """
+        Calculate flow rate for a given pressure drop.
+        """
+        return self.get_flow_rate_for_pressure(pressure_drop)

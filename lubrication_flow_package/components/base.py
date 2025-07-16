@@ -76,6 +76,10 @@ class FlowComponent:
     def calculate_pressure_drop(self, flow_rate: float, fluid_properties: Dict) -> float:
         """Calculate pressure drop through this component"""
         raise NotImplementedError("Subclasses must implement calculate_pressure_drop")
+
+    def calculate_flow_rate(self, pressure_drop: float, fluid_properties: Dict) -> float:
+        """Calculate flow rate for a given pressure drop"""
+        raise NotImplementedError("Subclasses must implement calculate_flow_rate")
     
     def get_flow_area(self) -> float:
         """Get the flow area of this component"""

@@ -8,6 +8,7 @@ from typing import Dict, Optional, Union
 from .base import FlowComponent, ComponentType, ConnectorType
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.utils.friction import churchill_friction_factor
+from scipy.optimize import newton
 
 
 class LossCoefficientCalculator:
@@ -348,6 +349,41 @@ class Connector(FlowComponent):
         dp_minor = k * density * velocity * velocity / 2.0
 
         return dp_pipe + dp_minor
+
+    def calculate_flow_rate(self, pressure_drop: float, fluid_properties: Dict) -> float:
+        """
+        Calculate flow rate for a given pressure drop using a numerical root-finder.
+        """
+        if pressure_drop <= 0:
+            return 0.0
+
+        def residual(q):
+            return self.calculate_pressure_drop(q, fluid_properties) - pressure_drop
+
+        # Initial guess based on a simplified model assuming a constant K
+        density = fluid_properties['density']
+        area = self.get_flow_area()
+        k_guess = self.loss_coefficient
+        if k_guess > 0:
+            initial_guess = area * math.sqrt(2 * pressure_drop / (k_guess * density))
+        else:
+            initial_guess = 0.01 # A small flow guess
+
+        try:
+            flow_rate = newton(residual, initial_guess, tol=1e-6, maxiter=50)
+        except RuntimeError:
+            from scipy.optimize import bisect
+            lower_bound = 0
+            upper_bound = initial_guess * 10
+            for _ in range(10):
+                if residual(upper_bound) * residual(lower_bound) < 0:
+                    break
+                upper_bound *= 2
+            else:
+                raise ValueError("Could not bracket the root for flow calculation in Connector")
+            flow_rate = bisect(residual, lower_bound, upper_bound, tol=1e-6)
+
+        return flow_rate
     
     def set_geometric_parameters(self, **kwargs):
         """

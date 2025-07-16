@@ -11,6 +11,7 @@ from ..config.network_config import NetworkConfigLoader, NetworkConfigSaver
 from ..config.simulation_config import SimulationConfig
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
 from ..solvers.nonlinear_solver import RobustNonLinearSolver
+from ..solvers.tree_solver import NonLinearTreeSolver
 from ..utils.network_builder import NetworkBuilder
 from ..components.base import NozzleType, ConnectorType
 
@@ -125,7 +126,8 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
         # Solver Factory
         solver_map = {
             'nodal': NodalMatrixSolver,
-            'robust_newton': RobustNonLinearSolver
+            'robust_newton': RobustNonLinearSolver,
+            'tree_nonlinear': NonLinearTreeSolver
         }
         solver_class = solver_map.get(solver_type)
         if not solver_class:
@@ -273,7 +275,7 @@ Examples:
     # Simulate command
     simulate_parser = subparsers.add_parser('simulate', help='Simulate a network from configuration file')
     simulate_parser.add_argument('config_file', help='Network configuration file')
-    simulate_parser.add_argument('--solver', default='nodal', choices=['nodal', 'robust_newton'],
+    simulate_parser.add_argument('--solver', default='nodal', choices=['nodal', 'robust_newton', 'tree_nonlinear'],
                                 help='Solver type to use (default: nodal)')
     simulate_parser.add_argument('--output', help='Save results to file')
     simulate_parser.add_argument('--solver-config', help='Path to solver configuration file')
