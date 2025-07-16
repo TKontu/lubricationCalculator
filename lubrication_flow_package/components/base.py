@@ -80,6 +80,10 @@ class FlowComponent:
     def calculate_flow_rate(self, pressure_drop: float, fluid_properties: Dict) -> float:
         """Calculate flow rate for a given pressure drop"""
         raise NotImplementedError("Subclasses must implement calculate_flow_rate")
+
+    def get_differential_resistance(self, flow_rate: float, fluid_properties: Dict) -> float:
+        """Calculate the differential resistance d(ΔP)/dQ"""
+        raise NotImplementedError("Subclasses must implement get_differential_resistance")
     
     def get_flow_area(self) -> float:
         """Get the flow area of this component"""

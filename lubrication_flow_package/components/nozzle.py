@@ -125,6 +125,21 @@ class Nozzle(FlowComponent):
         # Q = A * sqrt(2 * dP / (K * rho))
         flow_rate = area * math.sqrt(2 * pressure_drop / (K * density))
         return flow_rate
+
+    def get_differential_resistance(self, flow_rate: float, fluid_properties: Dict) -> float:
+        """
+        Calculate the differential resistance d(ΔP)/dQ.
+        For a nozzle, ΔP = K * Q^2, so d(ΔP)/dQ = 2 * K * Q.
+        """
+        if flow_rate == 0:
+            return 1e-9 # Avoid division by zero, return a small resistance
+
+        pressure_drop = self.calculate_pressure_drop(flow_rate, fluid_properties)
+        
+        # d(ΔP)/dQ = 2 * ΔP / Q
+        differential_resistance = 2 * pressure_drop / flow_rate if flow_rate != 0 else 0
+        
+        return max(differential_resistance, 1e-9)
     
 
 class StandardAngleSprayNozzle(Nozzle):

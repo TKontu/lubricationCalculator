@@ -105,3 +105,26 @@ class Channel(FlowComponent):
             flow_rate = brentq(residual, lower_bound, upper_bound, xtol=1e-6)
 
         return flow_rate
+
+    def get_differential_resistance(self, flow_rate: float, fluid_properties: Dict) -> float:
+        """
+        Calculate the differential resistance d(ΔP)/dQ using a finite difference method.
+        """
+        if flow_rate == 0:
+            # For zero flow, resistance is based on laminar flow (Poiseuille's law)
+            # ΔP = (128 * μ * L * Q) / (π * D^4) => d(ΔP)/dQ = (128 * μ * L) / (π * D^4)
+            μ = fluid_properties['viscosity']
+            return (128 * μ * self.length) / (math.pi * self.diameter**4)
+
+        # Use a small perturbation for the finite difference calculation
+        delta_q = flow_rate * 1e-6
+        if delta_q == 0:
+            delta_q = 1e-9 # Avoid zero perturbation if flow_rate is very small but non-zero
+
+        p1 = self.calculate_pressure_drop(flow_rate, fluid_properties)
+        p2 = self.calculate_pressure_drop(flow_rate + delta_q, fluid_properties)
+        
+        differential_resistance = (p2 - p1) / delta_q
+        
+        # Ensure resistance is positive
+        return max(differential_resistance, 1e-9)

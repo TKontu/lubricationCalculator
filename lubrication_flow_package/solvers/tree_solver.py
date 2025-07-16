@@ -47,11 +47,13 @@ class NonLinearTreeSolver(SolverBase):
         self.logger.debug(f"Reference node: {ref_node_id}")
         self.logger.debug(f"Unknown nodes: {unknown_node_ids}")
 
-        # 2. Get initial guess for node pressures
-        inlet_pressure = self.sim_config.inlet_pressure or 200000.0
-        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
-        pressures = np.full(len(unknown_node_ids), (inlet_pressure + outlet_pressure) / 2.0)
-        self.logger.debug(f"Initial pressures guess: {pressures}")
+        # 2. Get initial guess for node pressures using a linear solver
+        linear_solver = NodalMatrixSolver(self.sim_config)
+        linear_solution = linear_solver.solve(network)
+        initial_pressures = linear_solution['node_pressures']
+        
+        pressures = np.array([initial_pressures[nid] for nid in unknown_node_ids])
+        self.logger.debug(f"Initial pressures guess from linear solver: {pressures}")
 
         converged = False
         for i in range(self.config.max_iterations):
@@ -139,7 +141,7 @@ class NonLinearTreeSolver(SolverBase):
             
             # Add external flow constraint for the inlet node
             if node_id == network.inlet_node.id:
-                net_flow -= self.sim_config.total_flow_rate
+                net_flow += self.sim_config.total_flow_rate
 
             residuals[i] = net_flow
             
@@ -147,29 +149,40 @@ class NonLinearTreeSolver(SolverBase):
 
     def _build_jacobian(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> np.ndarray:
         """
-        Constructs the Jacobian matrix J(P) for the system using finite differences.
+        Constructs the Jacobian matrix J(P) for the system using analytical derivatives.
         """
         from scipy.sparse import lil_matrix
 
         num_unknowns = len(unknown_node_ids)
         jacobian = lil_matrix((num_unknowns, num_unknowns))
+        node_map = {node_id: i for i, node_id in enumerate(unknown_node_ids)}
+
+        full_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
+        full_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
+
+        for conn in network.connections:
+            from_id, to_id = conn.from_node.id, conn.to_node.id
+            
+            pressure_drop = full_pressures.get(from_id, 0) - full_pressures.get(to_id, 0)
+            flow = conn.component.calculate_flow_rate(pressure_drop, self.fluid_properties)
+            
+            try:
+                g = 1.0 / conn.component.get_differential_resistance(flow, self.fluid_properties)
+            except ZeroDivisionError:
+                g = 1e9  # A large conductance for near-zero resistance
+
+            if from_id in node_map:
+                i = node_map[from_id]
+                jacobian[i, i] += g
+                if to_id in node_map:
+                    j = node_map[to_id]
+                    jacobian[i, j] -= g
+                    jacobian[j, i] -= g
+
+            if to_id in node_map:
+                j = node_map[to_id]
+                jacobian[j, j] += g
         
-        # Base residual
-        f0 = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
-
-        # Perturb each pressure and calculate the change in the residual
-        for j in range(num_unknowns):
-            p_perturbed = pressures.copy()
-            # Add a small, adaptive perturbation
-            pressure_mag = abs(p_perturbed[j])
-            delta_p = max(1e-6 * pressure_mag, 1e-3)
-            p_perturbed[j] += delta_p
-            
-            f1 = self._evaluate_residual(p_perturbed, network, unknown_node_ids, ref_node_id)
-            
-            # The j-th column of the Jacobian is (f1 - f0) / delta_p
-            jacobian[:, j] = (f1 - f0) / delta_p
-
         # Add a small regularization term to the diagonal to improve stability
         for i in range(num_unknowns):
             jacobian[i, i] += 1e-9
