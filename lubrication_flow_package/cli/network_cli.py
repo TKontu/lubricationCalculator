@@ -134,11 +134,15 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
             print(f"Unknown solver type: {solver_type}")
             return False
 
-        # Load optional solver config
+        # Load optional solver config from file or from the main config
         solver_config = None
         if solver_config_file:
             from ..solvers.config import SolverConfig
             solver_config = SolverConfig.from_yaml(solver_config_file)
+        elif hasattr(config, 'simulation') and hasattr(config.simulation, 'solver_settings') and config.simulation.solver_settings:
+            from ..solvers.config import SolverConfig
+            # Create SolverConfig from the dict in the loaded network config
+            solver_config = SolverConfig(**config.simulation.solver_settings)
 
         # Instantiate and run the solver using the unified interface
         solver = solver_class(sim_config, solver_config)

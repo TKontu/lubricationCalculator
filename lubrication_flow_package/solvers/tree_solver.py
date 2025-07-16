@@ -47,6 +47,10 @@ class NonLinearTreeSolver(SolverBase):
         self.logger.debug(f"Reference node: {ref_node_id}")
         self.logger.debug(f"Unknown nodes: {unknown_node_ids}")
 
+        # Define pressure bounds from simulation config
+        inlet_pressure = self.sim_config.inlet_pressure or 200000.0
+        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+
         # 2. Get initial guess for node pressures using a linear solver
         linear_solver = NodalMatrixSolver(self.sim_config)
         linear_solution = linear_solver.solve(network)

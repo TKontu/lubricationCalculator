@@ -1388,8 +1388,8 @@
       "viscosity_model": "vogel"
     },
     "solver_settings": {
-      "max_iterations": 10000,
-      "tolerance": 1e-06,
+      "max_iterations": 50000,
+      "tolerance": 1e-05,
       "relaxation_factor": 0.8
     },
     "output_settings": {
@@ -1405,5 +1405,12 @@
   },
   "metadata": {
     "created_from": "network_object"
+  },
+  "simulation_config": {
+    "total_flow_rate": 124,
+    "temperature": 55.0,
+    "inlet_pressure": 300000.0,
+    "outlet_pressure": 101325.0,
+    "oil_type": "VG320"
   }
 }
