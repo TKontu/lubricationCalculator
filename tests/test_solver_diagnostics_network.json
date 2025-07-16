@@ -1,0 +1,36 @@
+{
+  "network_name": "TestSolverDiagnosticsNetwork",
+  "description": "A simple network for testing solver diagnostics.",
+  "nodes": [
+    { "id": "inlet", "type": "inlet" },
+    { "id": "j1" },
+    { "id": "out1", "type": "outlet" },
+    { "id": "out2", "type": "outlet" }
+  ],
+  "components": [
+    { "id": "pipe1", "type": "channel", "length": 1, "diameter": 0.01 },
+    { "id": "nozzle1", "type": "nozzle", "diameter": 0.002 },
+    { "id": "nozzle2", "type": "nozzle", "diameter": 0.002 }
+  ],
+  "connections": [
+    { "from_node": "inlet", "to_node": "j1", "component": "pipe1" },
+    { "from_node": "j1", "to_node": "out1", "component": "nozzle1" },
+    { "from_node": "j1", "to_node": "out2", "component": "nozzle2" }
+  ],
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 10,
+      "temperature": 40,
+      "inlet_pressure": 200000
+    },
+    "fluid_properties": {
+      "oil_type": "SAE30"
+    },
+    "solver_settings": {
+      "tolerance": 1e-6
+    },
+    "output_settings": {
+        "input_flow_rate_unit": "l/min"
+    }
+  }
+}

@@ -1,19 +1,19 @@
 """
-Tests for the NonLinearTreeSolver.
+Tests for the TreeSolver.
 """
 
 import pytest
 import numpy as np
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.components.nozzle import Nozzle, NozzleType
 from lubrication_flow_package.components.connector import Connector, ConnectorType
 from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
-from lubrication_flow_package.solvers.tree_solver import NonLinearTreeSolver
+from lubrication_flow_package.solvers.nonlinear_tree_solver import TreeSolver
 
 from lubrication_flow_package.utils.network_builder import NetworkBuilder
 from lubrication_flow_package.config.simulation_config import SimulationConfig
@@ -84,7 +84,7 @@ def test_solver_on_simple_tree():
         .build()
     )
 
-    solver = NonLinearTreeSolver(sim_config)
+    solver = TreeSolver(sim_config)
     solution = solver.solve(network)
 
     assert solution['converged']
@@ -117,7 +117,7 @@ def test_solver_against_linear_solver():
     )
 
     # Solve with the new non-linear solver
-    nonlinear_solver = NonLinearTreeSolver(sim_config)
+    nonlinear_solver = TreeSolver(sim_config)
     nonlinear_solution = nonlinear_solver.solve(network)
 
     # Solve with the linear solver

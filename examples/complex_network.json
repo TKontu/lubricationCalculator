@@ -1,6 +1,39 @@
 {
   "network_name": "Flow Network",
   "description": "Complex network with 5 cross-junctions and 10 unique diverging paths.",
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 124,
+      "temperature": 55.0,
+      "inlet_pressure": 300000.0,
+      "outlet_pressure": 100000
+    },
+    "fluid_properties": {
+      "oil_density": 900.0,
+      "oil_type": "VG320",
+      "viscosity_model": "vogel"
+    },
+    "solver_settings": {
+      "max_iterations": 50,
+      "tolerance": 1e-05,
+      "relaxation_factor": 0.8,
+      "min_resistance": 1.0e-12,
+      "dq_absolute": 1.0e-8
+    },
+    "output_settings": {
+      "output_units": "metric",
+      "input_pressure_unit": "Pa",
+      "input_flow_rate_unit": "l/min",
+      "output_pressure_unit": "bar",
+      "output_flow_rate_unit": "l/min",
+      "detailed_output": true,
+      "save_results": false,
+      "results_file": null
+    }
+  },
+  "metadata": {
+    "created_from": "network_object"
+  },
   "nodes": [
     {
       "id": "2567a965",
@@ -21,7 +54,7 @@
     {
       "id": "b98e7ba4",
       "name": "J2_node",
-      "elevation": 4.800000000000001,
+      "elevation": 4.8,
       "type": "junction",
       "x": 0.0,
       "y": 0.0
@@ -291,26 +324,10 @@
       "y": 0.0
     },
     {
-      "id": "90b7a016",
-      "name": "path_4b_nozzle_in",
-      "elevation": 0.0,
-      "type": "junction",
-      "x": 0.0,
-      "y": 0.0
-    },
-    {
-      "id": "2351f33c",
-      "name": "path_4b_out",
-      "elevation": 1.8,
-      "type": "outlet",
-      "x": 0.0,
-      "y": 0.0
-    },
-    {
       "id": "c5c52cfb",
       "name": "J6_node",
       "elevation": 4.4,
-      "type": "outlet",
+      "type": "junction",
       "x": 0.0,
       "y": 0.0
     },
@@ -331,22 +348,6 @@
       "y": 0.0
     },
     {
-      "id": "e6856da2",
-      "name": "path_5a_nozzle_in",
-      "elevation": 0.0,
-      "type": "junction",
-      "x": 0.0,
-      "y": 0.0
-    },
-    {
-      "id": "2e87a190",
-      "name": "path_5a_out",
-      "elevation": 2.0,
-      "type": "outlet",
-      "x": 0.0,
-      "y": 0.0
-    },
-    {
       "id": "a77c1a00",
       "name": "path_5b_start",
       "elevation": 3.8,
@@ -363,18 +364,226 @@
       "y": 0.0
     },
     {
-      "id": "2a9c67bb",
-      "name": "path_5b_nozzle_in",
-      "elevation": 0.0,
+      "id": "path_4b_tee_1",
+      "name": "path_4b_tee_1",
       "type": "junction",
+      "elevation": 0.0,
       "x": 0.0,
       "y": 0.0
     },
     {
-      "id": "fed38bee",
-      "name": "path_5b_out",
-      "elevation": 1.8,
+      "id": "path_4b_out_1",
+      "name": "path_4b_out_1",
       "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_4b_tee_2",
+      "name": "path_4b_tee_2",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_4b_out_2",
+      "name": "path_4b_out_2",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_4b_tee_3",
+      "name": "path_4b_tee_3",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_4b_out_3",
+      "name": "path_4b_out_3",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_4b_final_out",
+      "name": "path_4b_final_out",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_tee_1",
+      "name": "path_5a_tee_1",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_out_1",
+      "name": "path_5a_out_1",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_tee_2",
+      "name": "path_5a_tee_2",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_out_2",
+      "name": "path_5a_out_2",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_tee_3",
+      "name": "path_5a_tee_3",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_out_3",
+      "name": "path_5a_out_3",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5a_final_out",
+      "name": "path_5a_final_out",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_tee_1",
+      "name": "path_5b_tee_1",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_out_1",
+      "name": "path_5b_out_1",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_tee_2",
+      "name": "path_5b_tee_2",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_out_2",
+      "name": "path_5b_out_2",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_tee_3",
+      "name": "path_5b_tee_3",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_out_3",
+      "name": "path_5b_out_3",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_5b_final_out",
+      "name": "path_5b_final_out",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_tee_1",
+      "name": "path_6_tee_1",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_out_1",
+      "name": "path_6_out_1",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_tee_2",
+      "name": "path_6_tee_2",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_out_2",
+      "name": "path_6_out_2",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_tee_3",
+      "name": "path_6_tee_3",
+      "type": "junction",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_out_3",
+      "name": "path_6_out_3",
+      "type": "outlet",
+      "elevation": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": "path_6_final_out",
+      "name": "path_6_final_out",
+      "type": "outlet",
+      "elevation": 0.0,
       "x": 0.0,
       "y": 0.0
     }
@@ -385,21 +594,21 @@
       "name": "Channel_15923fb7",
       "type": "channel",
       "diameter": 0.042,
-      "length": 5.0
+      "length": 0.25
     },
     {
       "id": "d20f4508",
       "name": "Channel_d20f4508",
       "type": "channel",
       "diameter": 0.042,
-      "length": 5.0
+      "length": 0.25
     },
     {
       "id": "3ceb2dd5",
       "name": "Channel_3ceb2dd5",
       "type": "channel",
       "diameter": 0.028,
-      "length": 1.0
+      "length": 0.05
     },
     {
       "id": "e02f6c4e",
@@ -413,7 +622,7 @@
       "name": "path_1a_drilling",
       "type": "channel",
       "diameter": 0.028,
-      "length": 2.0
+      "length": 0.1
     },
     {
       "id": "d82e85e7",
@@ -427,7 +636,7 @@
       "name": "Channel_3e7938f2",
       "type": "channel",
       "diameter": 0.026,
-      "length": 1.2
+      "length": 0.06
     },
     {
       "id": "fc0efc86",
@@ -441,7 +650,7 @@
       "name": "path_1b_drilling",
       "type": "channel",
       "diameter": 0.026,
-      "length": 2.5
+      "length": 0.125
     },
     {
       "id": "8be50de4",
@@ -455,14 +664,14 @@
       "name": "Channel_10776c4b",
       "type": "channel",
       "diameter": 0.042,
-      "length": 5.0
+      "length": 0.25
     },
     {
       "id": "5a415899",
       "name": "Channel_5a415899",
       "type": "channel",
       "diameter": 0.026,
-      "length": 1.0
+      "length": 0.05
     },
     {
       "id": "332daa0d",
@@ -476,7 +685,7 @@
       "name": "path_2a_drilling",
       "type": "channel",
       "diameter": 0.026,
-      "length": 2.0
+      "length": 0.1
     },
     {
       "id": "eb9b466a",
@@ -490,7 +699,7 @@
       "name": "Channel_dd4f8c38",
       "type": "channel",
       "diameter": 0.024,
-      "length": 1.2
+      "length": 0.06
     },
     {
       "id": "ebdf99ea",
@@ -504,7 +713,7 @@
       "name": "path_2b_drilling",
       "type": "channel",
       "diameter": 0.024,
-      "length": 2.5
+      "length": 0.125
     },
     {
       "id": "2c722481",
@@ -518,14 +727,14 @@
       "name": "Channel_05b836ea",
       "type": "channel",
       "diameter": 0.042,
-      "length": 5.0
+      "length": 0.25
     },
     {
       "id": "e604be98",
       "name": "Channel_e604be98",
       "type": "channel",
       "diameter": 0.024,
-      "length": 1.0
+      "length": 0.05
     },
     {
       "id": "e4396978",
@@ -539,7 +748,7 @@
       "name": "path_3a_drilling",
       "type": "channel",
       "diameter": 0.024,
-      "length": 2.0
+      "length": 0.1
     },
     {
       "id": "9bd33886",
@@ -553,7 +762,7 @@
       "name": "Channel_09338d3a",
       "type": "channel",
       "diameter": 0.022,
-      "length": 1.2
+      "length": 0.06
     },
     {
       "id": "e37175f0",
@@ -567,7 +776,7 @@
       "name": "path_3b_drilling",
       "type": "channel",
       "diameter": 0.022,
-      "length": 2.5
+      "length": 0.125
     },
     {
       "id": "e111303a",
@@ -581,14 +790,14 @@
       "name": "Channel_0bab64cd",
       "type": "channel",
       "diameter": 0.042,
-      "length": 5.0
+      "length": 0.25
     },
     {
       "id": "bdfd6346",
       "name": "Channel_bdfd6346",
       "type": "channel",
       "diameter": 0.022,
-      "length": 1.0
+      "length": 0.05
     },
     {
       "id": "ca3b289c",
@@ -602,7 +811,7 @@
       "name": "path_4a_drilling",
       "type": "channel",
       "diameter": 0.022,
-      "length": 2.0
+      "length": 0.1
     },
     {
       "id": "e4cc0342",
@@ -616,7 +825,7 @@
       "name": "Channel_b3104eac",
       "type": "channel",
       "diameter": 0.02,
-      "length": 1.2
+      "length": 0.06
     },
     {
       "id": "829d2a1e",
@@ -626,32 +835,18 @@
       "connector_type": "elbow_90"
     },
     {
-      "id": "c7ab4786",
-      "name": "path_4b_drilling",
-      "type": "channel",
-      "diameter": 0.02,
-      "length": 2.5
-    },
-    {
-      "id": "870877ea",
-      "name": "Nozzle_870877ea",
-      "type": "nozzle",
-      "diameter": 0.0056,
-      "nozzle_type": "sharp_edged"
-    },
-    {
       "id": "2085ac20",
       "name": "Channel_2085ac20",
       "type": "channel",
       "diameter": 0.042,
-      "length": 5.0
+      "length": 0.25
     },
     {
       "id": "f0a3cce5",
       "name": "Channel_f0a3cce5",
       "type": "channel",
       "diameter": 0.02,
-      "length": 1.0
+      "length": 0.05
     },
     {
       "id": "9bfedfbe",
@@ -661,25 +856,11 @@
       "connector_type": "elbow_45"
     },
     {
-      "id": "e21ee893",
-      "name": "path_5a_drilling",
-      "type": "channel",
-      "diameter": 0.02,
-      "length": 2.0
-    },
-    {
-      "id": "81ecda5d",
-      "name": "Nozzle_81ecda5d",
-      "type": "nozzle",
-      "diameter": 0.004,
-      "nozzle_type": "rounded"
-    },
-    {
       "id": "d75bc2c2",
       "name": "Channel_d75bc2c2",
       "type": "channel",
       "diameter": 0.018,
-      "length": 1.2
+      "length": 0.06
     },
     {
       "id": "fc26f767",
@@ -689,18 +870,200 @@
       "connector_type": "elbow_90"
     },
     {
-      "id": "46f2982c",
-      "name": "path_5b_drilling",
+      "id": "path_4b_pipe_1",
+      "name": "path_4b_pipe_1",
       "type": "channel",
-      "diameter": 0.018,
-      "length": 2.5
+      "length": 0.1,
+      "diameter": 0.02
     },
     {
-      "id": "eb500bf4",
-      "name": "Nozzle_eb500bf4",
+      "id": "path_4b_nozzle_1",
+      "name": "path_4b_nozzle_1",
       "type": "nozzle",
-      "diameter": 0.006,
-      "nozzle_type": "sharp_edged"
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_4b_pipe_2",
+      "name": "path_4b_pipe_2",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_4b_nozzle_2",
+      "name": "path_4b_nozzle_2",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_4b_pipe_3",
+      "name": "path_4b_pipe_3",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_4b_nozzle_3",
+      "name": "path_4b_nozzle_3",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_4b_final_nozzle",
+      "name": "path_4b_final_nozzle",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5a_pipe_1",
+      "name": "path_5a_pipe_1",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_5a_nozzle_1",
+      "name": "path_5a_nozzle_1",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5a_pipe_2",
+      "name": "path_5a_pipe_2",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_5a_nozzle_2",
+      "name": "path_5a_nozzle_2",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5a_pipe_3",
+      "name": "path_5a_pipe_3",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_5a_nozzle_3",
+      "name": "path_5a_nozzle_3",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5a_final_nozzle",
+      "name": "path_5a_final_nozzle",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5b_pipe_1",
+      "name": "path_5b_pipe_1",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_5b_nozzle_1",
+      "name": "path_5b_nozzle_1",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5b_pipe_2",
+      "name": "path_5b_pipe_2",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_5b_nozzle_2",
+      "name": "path_5b_nozzle_2",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5b_pipe_3",
+      "name": "path_5b_pipe_3",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_5b_nozzle_3",
+      "name": "path_5b_nozzle_3",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_5b_final_nozzle",
+      "name": "path_5b_final_nozzle",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_6_pipe_1",
+      "name": "path_6_pipe_1",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_6_nozzle_1",
+      "name": "path_6_nozzle_1",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_6_pipe_2",
+      "name": "path_6_pipe_2",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_6_nozzle_2",
+      "name": "path_6_nozzle_2",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_6_pipe_3",
+      "name": "path_6_pipe_3",
+      "type": "channel",
+      "length": 0.1,
+      "diameter": 0.02
+    },
+    {
+      "id": "path_6_nozzle_3",
+      "name": "path_6_nozzle_3",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
+    },
+    {
+      "id": "path_6_final_nozzle",
+      "name": "path_6_final_nozzle",
+      "type": "nozzle",
+      "diameter": 0.0035,
+      "nozzle_type": "rounded"
     }
   ],
   "connections": [
@@ -880,16 +1243,6 @@
       "component": "829d2a1e"
     },
     {
-      "from_node": "1bcb5c7a",
-      "to_node": "90b7a016",
-      "component": "c7ab4786"
-    },
-    {
-      "from_node": "90b7a016",
-      "to_node": "2351f33c",
-      "component": "870877ea"
-    },
-    {
       "from_node": "c3cf1846",
       "to_node": "c5c52cfb",
       "component": "2085ac20"
@@ -905,16 +1258,6 @@
       "component": "9bfedfbe"
     },
     {
-      "from_node": "830bcdfc",
-      "to_node": "e6856da2",
-      "component": "e21ee893"
-    },
-    {
-      "from_node": "e6856da2",
-      "to_node": "2e87a190",
-      "component": "81ecda5d"
-    },
-    {
       "from_node": "c3cf1846",
       "to_node": "a77c1a00",
       "component": "d75bc2c2"
@@ -925,45 +1268,144 @@
       "component": "fc26f767"
     },
     {
-      "from_node": "92085884",
-      "to_node": "2a9c67bb",
-      "component": "46f2982c"
+      "from_node": "1bcb5c7a",
+      "to_node": "path_4b_tee_1",
+      "component": "path_4b_pipe_1"
     },
     {
-      "from_node": "2a9c67bb",
-      "to_node": "fed38bee",
-      "component": "eb500bf4"
+      "from_node": "path_4b_tee_1",
+      "to_node": "path_4b_out_1",
+      "component": "path_4b_nozzle_1"
+    },
+    {
+      "from_node": "path_4b_tee_1",
+      "to_node": "path_4b_tee_2",
+      "component": "path_4b_pipe_2"
+    },
+    {
+      "from_node": "path_4b_tee_2",
+      "to_node": "path_4b_out_2",
+      "component": "path_4b_nozzle_2"
+    },
+    {
+      "from_node": "path_4b_tee_2",
+      "to_node": "path_4b_tee_3",
+      "component": "path_4b_pipe_3"
+    },
+    {
+      "from_node": "path_4b_tee_3",
+      "to_node": "path_4b_out_3",
+      "component": "path_4b_nozzle_3"
+    },
+    {
+      "from_node": "path_4b_tee_3",
+      "to_node": "path_4b_final_out",
+      "component": "path_4b_final_nozzle"
+    },
+    {
+      "from_node": "830bcdfc",
+      "to_node": "path_5a_tee_1",
+      "component": "path_5a_pipe_1"
+    },
+    {
+      "from_node": "path_5a_tee_1",
+      "to_node": "path_5a_out_1",
+      "component": "path_5a_nozzle_1"
+    },
+    {
+      "from_node": "path_5a_tee_1",
+      "to_node": "path_5a_tee_2",
+      "component": "path_5a_pipe_2"
+    },
+    {
+      "from_node": "path_5a_tee_2",
+      "to_node": "path_5a_out_2",
+      "component": "path_5a_nozzle_2"
+    },
+    {
+      "from_node": "path_5a_tee_2",
+      "to_node": "path_5a_tee_3",
+      "component": "path_5a_pipe_3"
+    },
+    {
+      "from_node": "path_5a_tee_3",
+      "to_node": "path_5a_out_3",
+      "component": "path_5a_nozzle_3"
+    },
+    {
+      "from_node": "path_5a_tee_3",
+      "to_node": "path_5a_final_out",
+      "component": "path_5a_final_nozzle"
+    },
+    {
+      "from_node": "92085884",
+      "to_node": "path_5b_tee_1",
+      "component": "path_5b_pipe_1"
+    },
+    {
+      "from_node": "path_5b_tee_1",
+      "to_node": "path_5b_out_1",
+      "component": "path_5b_nozzle_1"
+    },
+    {
+      "from_node": "path_5b_tee_1",
+      "to_node": "path_5b_tee_2",
+      "component": "path_5b_pipe_2"
+    },
+    {
+      "from_node": "path_5b_tee_2",
+      "to_node": "path_5b_out_2",
+      "component": "path_5b_nozzle_2"
+    },
+    {
+      "from_node": "path_5b_tee_2",
+      "to_node": "path_5b_tee_3",
+      "component": "path_5b_pipe_3"
+    },
+    {
+      "from_node": "path_5b_tee_3",
+      "to_node": "path_5b_out_3",
+      "component": "path_5b_nozzle_3"
+    },
+    {
+      "from_node": "path_5b_tee_3",
+      "to_node": "path_5b_final_out",
+      "component": "path_5b_final_nozzle"
+    },
+    {
+      "from_node": "c5c52cfb",
+      "to_node": "path_6_tee_1",
+      "component": "path_6_pipe_1"
+    },
+    {
+      "from_node": "path_6_tee_1",
+      "to_node": "path_6_out_1",
+      "component": "path_6_nozzle_1"
+    },
+    {
+      "from_node": "path_6_tee_1",
+      "to_node": "path_6_tee_2",
+      "component": "path_6_pipe_2"
+    },
+    {
+      "from_node": "path_6_tee_2",
+      "to_node": "path_6_out_2",
+      "component": "path_6_nozzle_2"
+    },
+    {
+      "from_node": "path_6_tee_2",
+      "to_node": "path_6_tee_3",
+      "component": "path_6_pipe_3"
+    },
+    {
+      "from_node": "path_6_tee_3",
+      "to_node": "path_6_out_3",
+      "component": "path_6_nozzle_3"
+    },
+    {
+      "from_node": "path_6_tee_3",
+      "to_node": "path_6_final_out",
+      "component": "path_6_final_nozzle"
     }
-  ],
-  "simulation": {
-    "flow_parameters": {
-      "total_flow_rate": 0.0033333333333333335,
-      "temperature": 50.0,
-      "inlet_pressure": 500000.0,
-      "outlet_pressure": null
-    },
-    "fluid_properties": {
-      "oil_density": 900.0,
-      "oil_type": "VG320",
-      "viscosity_model": "vogel"
-    },
-    "solver_settings": {
-      "max_iterations": 10000,
-      "tolerance": 1e-06,
-      "relaxation_factor": 0.8
-    },
-    "output_settings": {
-      "output_units": "metric",
-      "input_pressure_unit": "Pa",
-      "input_flow_rate_unit": "m3/s",
-      "output_pressure_unit": "bar",
-      "output_flow_rate_unit": "l/min",
-      "detailed_output": true,
-      "save_results": false,
-      "results_file": null
-    }
-  },
-  "metadata": {
-    "created_from": "network_object"
-  }
+  ]
 }

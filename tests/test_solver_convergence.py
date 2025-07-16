@@ -11,8 +11,8 @@ import json
 
 from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.config.simulation_config import SimulationConfig
-from lubrication_flow_package.solvers.tree_solver import TreeSolver
-from lubrication_flow_package.solvers.nonlinear_solver import RobustNonLinearSolver
+from lubrication_flow_package.solvers.nonlinear_tree_solver import TreeSolver
+from lubrication_flow_package.solvers.nonlinear_loop_solver import RobustNonLinearSolver
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.components.nozzle import Nozzle
 from lubrication_flow_package.network.node import Node

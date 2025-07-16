@@ -11,8 +11,8 @@ from typing import Optional
 from ..config.network_config import NetworkConfigLoader, NetworkConfigSaver
 from ..config.simulation_config import SimulationConfig
 from ..solvers.nodal_matrix_solver import NodalMatrixSolver
-from ..solvers.nonlinear_solver import RobustNonLinearSolver
-from ..solvers.tree_solver import TreeSolver
+from ..solvers.nonlinear_loop_solver import RobustNonLinearSolver
+from ..solvers.nonlinear_tree_solver import TreeSolver
 from ..utils.network_builder import NetworkBuilder
 from ..components.base import NozzleType, ConnectorType
 

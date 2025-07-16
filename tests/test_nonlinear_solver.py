@@ -7,7 +7,7 @@ import numpy as np
 import networkx as nx
 from scipy.sparse import csr_matrix
 
-from lubrication_flow_package.solvers.nonlinear_solver import RobustNonLinearSolver
+from lubrication_flow_package.solvers.nonlinear_loop_solver import RobustNonLinearSolver
 from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.network.connection import Connection
