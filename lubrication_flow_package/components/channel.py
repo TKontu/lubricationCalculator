@@ -78,34 +78,30 @@ class Channel(FlowComponent):
         try:
             flow_rate = newton(residual, initial_guess, tol=1e-6, maxiter=50)
         except (RuntimeError, ValueError):
-            # If Newton's method fails, try a simpler bisection method
-            from scipy.optimize import bisect
-            # Bracket the root. The bracket must contain a sign change.
-            # We need to handle positive and negative pressure drops.
+            # If Newton's method fails, try a more robust bracketing solver
+            from scipy.optimize import brentq
+            
+            # Improved bracketing logic
             if pressure_drop > 0:
-                lower_bound = 0
-                upper_bound = initial_guess * 2
-                for _ in range(20): # Try to expand the bracket if needed
-                    if residual(upper_bound) > 0:
+                lower_bound = 0.0
+                # Start with a reasonable upper bound and expand systematically
+                upper_bound = max(initial_guess, 1e-5) * 1.1 
+                for _ in range(15):
+                    if residual(lower_bound) * residual(upper_bound) < 0:
                         break
-                    upper_bound *= 1.5
+                    upper_bound *= 2.0
                 else:
-                    # If still not bracketed, try a very large bound
-                    upper_bound = initial_guess * 1e6
-                    if residual(upper_bound) < 0:
-                        raise ValueError("Could not bracket the root for flow calculation")
+                    raise ValueError("Could not bracket the root for positive pressure drop.")
             else: # pressure_drop < 0
-                upper_bound = 0
-                lower_bound = initial_guess * 2
-                for _ in range(20):
-                    if residual(lower_bound) < 0:
+                upper_bound = 0.0
+                lower_bound = min(initial_guess, -1e-5) * 1.1
+                for _ in range(15):
+                    if residual(lower_bound) * residual(upper_bound) < 0:
                         break
-                    lower_bound *= 1.5
+                    lower_bound *= 2.0
                 else:
-                    lower_bound = initial_guess * 1e6
-                    if residual(lower_bound) > 0:
-                        raise ValueError("Could not bracket the root for flow calculation")
+                    raise ValueError("Could not bracket the root for negative pressure drop.")
 
-            flow_rate = bisect(residual, lower_bound, upper_bound, xtol=1e-6)
+            flow_rate = brentq(residual, lower_bound, upper_bound, xtol=1e-6)
 
         return flow_rate

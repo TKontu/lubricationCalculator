@@ -381,7 +381,7 @@ class Connector(FlowComponent):
                 upper_bound *= 2
             else:
                 raise ValueError("Could not bracket the root for flow calculation in Connector")
-            flow_rate = bisect(residual, lower_bound, upper_bound, tol=1e-6)
+            flow_rate = bisect(residual, lower_bound, upper_bound, xtol=1e-6)
 
         return flow_rate
     

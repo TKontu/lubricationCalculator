@@ -30,6 +30,13 @@ class NonLinearTreeSolver(SolverBase):
         Main entry point for solving the hydraulic network using a robust
         nodal pressure formulation.
         """
+        # 0. Comprehensive Input Validation
+        is_valid, errors = network.validate_network()
+        if not is_valid:
+            raise ValueError(f"Invalid network configuration: {errors}")
+        if self.sim_config.total_flow_rate <= 0:
+            raise ValueError("Total flow rate must be positive.")
+
         if not network.outlet_nodes:
             raise ValueError("Network must have at least one outlet node.")
 
@@ -41,7 +48,18 @@ class NonLinearTreeSolver(SolverBase):
         # 2. Get initial guess for node pressures from the linear solver
         linear_solver = NodalMatrixSolver(self.sim_config, self.config)
         initial_solution = linear_solver.solve(network)
-        pressures = np.array([initial_solution['node_pressures'][nid] for nid in unknown_node_ids])
+        
+        # Validate the initial guess
+        initial_pressures = initial_solution['node_pressures']
+        if not all(np.isfinite(list(initial_pressures.values()))):
+            self.logger.warning("Linear solver produced non-finite initial pressures. Falling back to a simple guess.")
+            # Fallback to a simple pressure distribution
+            inlet_pressure = self.sim_config.inlet_pressure or 200000.0
+            outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+            for nid in initial_pressures:
+                initial_pressures[nid] = (inlet_pressure + outlet_pressure) / 2.0
+
+        pressures = np.array([initial_pressures[nid] for nid in unknown_node_ids])
 
         converged = False
         for i in range(self.config.max_iterations):
@@ -71,9 +89,15 @@ class NonLinearTreeSolver(SolverBase):
             
             self.logger.debug(f"Iteration {i}: delta_p = {delta_p}")
 
-            # 7. Update the solution with damping
-            damping_factor = 0.7  # Use a damping factor to improve stability
-            pressures += damping_factor * delta_p
+            # 7. Update the solution with damping and pressure bounds
+            alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, ref_node_id)
+            self.logger.debug(f"Iteration {i}: alpha = {alpha}")
+            pressures += alpha * delta_p
+
+            # Enforce pressure bounds
+            inlet_pressure = self.sim_config.inlet_pressure or 1e6 # A large default
+            outlet_pressure = self.sim_config.outlet_pressure or 0.0
+            pressures = np.clip(pressures, outlet_pressure, inlet_pressure)
         
         # 8. Post-process results
         final_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
@@ -145,13 +169,38 @@ class NonLinearTreeSolver(SolverBase):
         # Perturb each pressure and calculate the change in the residual
         for j in range(num_unknowns):
             p_perturbed = pressures.copy()
-            # Add a small perturbation
-            delta_p = 1.0 # Use a small but not insignificant pressure change
+            # Add a small, adaptive perturbation
+            pressure_mag = abs(p_perturbed[j])
+            delta_p = max(1e-6 * pressure_mag, 1e-3)
             p_perturbed[j] += delta_p
             
             f1 = self._evaluate_residual(p_perturbed, network, unknown_node_ids, ref_node_id)
             
             # The j-th column of the Jacobian is (f1 - f0) / delta_p
             jacobian[:, j] = (f1 - f0) / delta_p
+
+        # Add a small regularization term to the diagonal to improve stability
+        for i in range(num_unknowns):
+            jacobian[i, i] += 1e-9
             
         return jacobian.tocsr()
+
+    def _line_search(self, pressures: np.ndarray, delta_p: np.ndarray, residual: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> float:
+        """
+        Performs a line search to find an optimal step size alpha.
+        """
+        alpha = 1.0
+        c1 = 1e-4
+        residual_norm_sq = np.dot(residual, residual)
+
+        for _ in range(10): # Max 10 backtracks
+            p_new = pressures + alpha * delta_p
+            new_residual = self._evaluate_residual(p_new, network, unknown_node_ids, ref_node_id)
+            new_residual_norm_sq = np.dot(new_residual, new_residual)
+
+            if new_residual_norm_sq <= (1 - alpha * c1) * residual_norm_sq:
+                return alpha
+            
+            alpha *= 0.5
+        
+        return alpha
