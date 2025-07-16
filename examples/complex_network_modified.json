@@ -1388,7 +1388,7 @@
       "viscosity_model": "vogel"
     },
     "solver_settings": {
-      "max_iterations": 100,
+      "max_iterations": 50,
       "tolerance": 1e-05,
       "relaxation_factor": 0.8,
       "min_resistance": 1.0e-12,

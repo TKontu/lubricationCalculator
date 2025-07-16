@@ -6,6 +6,7 @@ import numpy as np
 from scipy.optimize import newton
 from typing import Dict, Optional, Callable
 import logging
+from collections import deque
 
 from ..config.simulation_config import SimulationConfig
 from ..network.flow_network import FlowNetwork
@@ -23,12 +24,15 @@ class TreeSolver(SolverBase):
         """
         super().__init__(sim_config, progress_callback)
         self.logger = logging.getLogger(__name__)
+        #logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 
     def solve(self, network: FlowNetwork) -> Dict:
         """
         Main entry point for solving the hydraulic network using a robust
         nodal pressure formulation.
         """
+        log_records = []
         self._report_progress("Starting non-linear solver for tree-like networks.")
         # 0. Comprehensive Input Validation
         is_valid, errors = network.validate_network()
@@ -61,17 +65,31 @@ class TreeSolver(SolverBase):
         converged = False
         last_residual_norm = -1
         stagnation_counter = 0
+        iterations_run = 0
 
         for i in range(self.sim_config.max_iterations):
+            iterations_run = i
             # 3. Evaluate the residual F(P)
             residual = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
             residual_norm = np.linalg.norm(residual)
             
-            # 4. Check for convergence
+            # 4. Check for convergence - use both absolute and relative criteria
             if residual_norm < self.sim_config.tolerance:
                 self._report_progress(f"Converged after {i} iterations.")
                 converged = True
                 break
+            
+            # Additional convergence check for small relative changes
+            if i > 0:
+                pressure_change = np.linalg.norm(pressures - prev_pressures) if 'prev_pressures' in locals() else float('inf')
+                relative_pressure_change = pressure_change / (np.linalg.norm(pressures) + 1e-12)
+                
+                if relative_pressure_change < 1e-8 and residual_norm < 1e-3:
+                    self._report_progress(f"Converged with relative tolerance after {i} iterations.")
+                    converged = True
+                    break
+            
+            prev_pressures = pressures.copy()
 
             # Check for stagnation
             if abs(residual_norm - last_residual_norm) < 1e-9:
@@ -93,23 +111,40 @@ class TreeSolver(SolverBase):
                 delta_p = spsolve(jacobian, -residual)
             except Exception as e:
                 self._report_progress(f"Linear solve failed: {e}. Jacobian may be singular.")
+                log_records.append(f"ERROR: Linear solve failed: {e}. Jacobian may be singular.")
+                log_records.append(f"Jacobian matrix:\n{jacobian.toarray()}")
                 break # Exit loop on failure
             
-            # Limit the pressure update
-            max_delta_p = 100000.0
+            # Adaptive step size limiting based on residual norm
+            max_delta_p = min(100000.0, 10.0 * residual_norm)
             delta_p = np.clip(delta_p, -max_delta_p, max_delta_p)
 
-            # 7. Update the solution with damping and pressure bounds
+            # 7. Update the solution with line search
             alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, ref_node_id)
-            if alpha < 1e-6:
+            if alpha < 1e-8:
                 self._report_progress("Alpha too small, solver may be stuck. Stopping.")
                 break
 
             pressures += alpha * delta_p
             self._report_progress(f"Iteration {i}: Residual Norm = {residual_norm:.6e}, Alpha = {alpha:.4f}")
-
+            
             # Enforce pressure bounds
             pressures = np.clip(pressures, outlet_pressure, inlet_pressure)
+            log_records.append(f"Iteration {i}: Residual Norm = {residual_norm:.6e}, Alpha = {alpha:.4f}, Delta P Norm = {np.linalg.norm(delta_p):.6e}")
+
+        # Process and show logs
+        if log_records:
+            self.logger.debug("--- Solver Iteration Log ---")
+            if len(log_records) <= 10:
+                for record in log_records:
+                    self.logger.debug(record)
+            else:
+                for record in log_records[:5]:
+                    self.logger.debug(record)
+                self.logger.debug("...")
+                for record in log_records[-5:]:
+                    self.logger.debug(record)
+            self.logger.debug("----------------------------")
         
         if not converged:
             self._report_progress(f"Solver did not converge after {self.sim_config.max_iterations} iterations.")
@@ -128,7 +163,7 @@ class TreeSolver(SolverBase):
 
         return {
             "converged": converged,
-            "iterations": i + 1,
+            "iterations": iterations_run + 1,
             "component_flows": component_flows,
             "node_pressures": final_pressures,
             "inlet_pressure": final_pressures[network.inlet_node.id],
@@ -206,28 +241,62 @@ class TreeSolver(SolverBase):
                 j = node_map[to_id]
                 jacobian[j, j] += g
         
-        # Add a small regularization term to the diagonal to improve stability
+        # Add adaptive regularization term to improve conditioning
+        # Scale regularization based on the typical diagonal magnitude
+        diagonal_values = [jacobian[i, i] for i in range(num_unknowns)]
+        if diagonal_values:
+            avg_diagonal = np.mean([abs(val) for val in diagonal_values if val != 0])
+            if avg_diagonal > 0:
+                regularization = max(avg_diagonal * 1e-6, 1e-6)
+            else:
+                regularization = 1e-6
+        else:
+            regularization = 1e-6
+            
         for i in range(num_unknowns):
-            jacobian[i, i] += 1e-9
+            jacobian[i, i] += regularization
             
         return jacobian.tocsr()
 
     def _line_search(self, pressures: np.ndarray, delta_p: np.ndarray, residual: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> float:
         """
-        Performs a line search to find an optimal step size alpha.
+        Performs a robust line search to find an optimal step size alpha.
+        Uses Armijo condition with adaptive backtracking.
         """
         alpha = 1.0
         c1 = 1e-4
         residual_norm_sq = np.dot(residual, residual)
-
-        for _ in range(10): # Max 10 backtracks
-            p_new = pressures + alpha * delta_p
-            new_residual = self._evaluate_residual(p_new, network, unknown_node_ids, ref_node_id)
-            new_residual_norm_sq = np.dot(new_residual, new_residual)
-
-            if new_residual_norm_sq <= (1 - alpha * c1) * residual_norm_sq:
-                return alpha
-            
-            alpha *= 0.5
         
-        return alpha
+        # Initial directional derivative
+        gradient_dot_direction = -residual_norm_sq  # Since we're solving J*delta_p = -residual
+        
+        # Bound pressure updates to reasonable ranges
+        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+        inlet_pressure = self.sim_config.inlet_pressure or 200000.0
+        
+        for i in range(15): # Max 15 backtracks
+            p_new = pressures + alpha * delta_p
+            
+            # Enforce pressure bounds during line search
+            p_new = np.clip(p_new, outlet_pressure, inlet_pressure)
+            
+            try:
+                new_residual = self._evaluate_residual(p_new, network, unknown_node_ids, ref_node_id)
+                new_residual_norm_sq = np.dot(new_residual, new_residual)
+                
+                # Armijo condition: sufficient decrease
+                if new_residual_norm_sq <= residual_norm_sq + alpha * c1 * gradient_dot_direction:
+                    return alpha
+                
+                # More aggressive backtracking if we're not making progress
+                if i < 5:
+                    alpha *= 0.5
+                else:
+                    alpha *= 0.1
+                    
+            except Exception:
+                # If residual evaluation fails, try smaller step
+                alpha *= 0.1
+                
+        # If line search fails, return very small step
+        return max(alpha, 1e-8)
