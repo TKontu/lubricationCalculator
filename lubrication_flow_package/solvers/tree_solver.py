@@ -27,50 +27,58 @@ class NonLinearTreeSolver(SolverBase):
 
     def solve(self, network: FlowNetwork) -> Dict:
         """
-        Main entry point for solving the hydraulic network.
+        Main entry point for solving the hydraulic network using a robust
+        nodal pressure formulation.
         """
-        # 1. Get initial guess for node pressures from the linear solver
+        if not network.outlet_nodes:
+            raise ValueError("Network must have at least one outlet node.")
+
+        # 1. Identify a reference node (an outlet) and unknown nodes
+        ref_node_id = network.outlet_nodes[0].id
+        unknown_node_ids = [nid for nid in network.nodes if nid != ref_node_id]
+        node_to_idx = {nid: i for i, nid in enumerate(unknown_node_ids)}
+
+        # 2. Get initial guess for node pressures from the linear solver
         linear_solver = NodalMatrixSolver(self.sim_config, self.config)
         initial_solution = linear_solver.solve(network)
-        
-        initial_pressures_dict = initial_solution['node_pressures']
-        
-        # Identify unknown pressures (all nodes that are not outlets)
-        unknown_node_ids = [nid for nid, node in network.nodes.items() if node not in network.outlet_nodes]
-        
-        pressures = np.array([initial_pressures_dict[nid] for nid in unknown_node_ids])
+        pressures = np.array([initial_solution['node_pressures'][nid] for nid in unknown_node_ids])
 
         converged = False
         for i in range(self.config.max_iterations):
             self.logger.debug(f"Iteration {i}: pressures = {pressures}")
-            # 4. Evaluate the residual F(P)
-            residual = self._evaluate_residual(pressures, network, unknown_node_ids)
-            self.logger.debug(f"Iteration {i}: residual = {residual}")
+            
+            # 3. Evaluate the residual F(P)
+            residual = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
+            self.logger.debug(f"Iteration {i}: residual norm = {np.linalg.norm(residual)}")
 
-            # 5. Check for convergence
+            # 4. Check for convergence
             if np.linalg.norm(residual) < self.config.tolerance:
                 self.logger.info(f"Converged after {i} iterations.")
                 converged = True
                 break
 
-            # 6. Build the Jacobian matrix J(P)
-            jacobian = self._build_jacobian(pressures, network, unknown_node_ids)
+            # 5. Build the Jacobian matrix J(P)
+            jacobian = self._build_jacobian(pressures, network, unknown_node_ids, ref_node_id)
             self.logger.debug(f"Iteration {i}: jacobian = \n{jacobian.toarray()}")
 
-            # 7. Solve the linear system J * delta_P = -F
+            # 6. Solve the linear system J * delta_P = -F
             from scipy.sparse.linalg import spsolve
-            delta_p = spsolve(jacobian, -residual)
+            try:
+                delta_p = spsolve(jacobian, -residual)
+            except Exception as e:
+                self.logger.error(f"Linear solve failed: {e}. Jacobian may be singular.")
+                break # Exit loop on failure
+            
             self.logger.debug(f"Iteration {i}: delta_p = {delta_p}")
 
-            # 8. Update the solution
-            pressures += delta_p
+            # 7. Update the solution with damping
+            damping_factor = 0.7  # Use a damping factor to improve stability
+            pressures += damping_factor * delta_p
         
-        # Post-process results
+        # 8. Post-process results
         final_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
-        for outlet_node in network.outlet_nodes:
-            final_pressures[outlet_node.id] = self.sim_config.outlet_pressure or 0.0
+        final_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
             
-        # Calculate final flows
         component_flows = {}
         for conn in network.connections:
             p_from = final_pressures[conn.from_node.id]
@@ -88,27 +96,19 @@ class NonLinearTreeSolver(SolverBase):
             "viscosity": self.fluid_properties['viscosity'],
         }
 
-    def _evaluate_residual(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list) -> np.ndarray:
+    def _evaluate_residual(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> np.ndarray:
         """
         Evaluates the residual vector F(P) for the system of non-linear equations.
         The residual at each node is the net flow imbalance.
         """
-        
-        # Create a full pressure vector including outlet pressures
+        # Create a full pressure vector including the reference pressure
         full_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
-        for outlet_node in network.outlet_nodes:
-            full_pressures[outlet_node.id] = self.sim_config.outlet_pressure or 0.0
+        full_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
 
         residuals = np.zeros(len(unknown_node_ids))
-        node_to_idx = {nid: i for i, nid in enumerate(unknown_node_ids)}
 
         for i, node_id in enumerate(unknown_node_ids):
-            # Skip the inlet node, its pressure is determined by the flow constraint
-            if node_id == network.inlet_node.id:
-                continue
-
             net_flow = 0
-            
             # Sum flows from all connections to this node
             for conn in network.connections:
                 if conn.from_node.id == node_id:
@@ -122,22 +122,15 @@ class NonLinearTreeSolver(SolverBase):
                     flow = conn.component.calculate_flow_rate(pressure_drop, self.fluid_properties)
                     net_flow += flow
             
+            # Add external flow constraint for the inlet node
+            if node_id == network.inlet_node.id:
+                net_flow -= self.sim_config.total_flow_rate
+
             residuals[i] = net_flow
             
-        # The residual for the inlet node is the total flow
-        inlet_idx = node_to_idx[network.inlet_node.id]
-        inlet_flow = 0
-        for conn in network.connections:
-            if conn.from_node.id == network.inlet_node.id:
-                p_other = full_pressures[conn.to_node.id]
-                pressure_drop = full_pressures[network.inlet_node.id] - p_other
-                inlet_flow += conn.component.calculate_flow_rate(pressure_drop, self.fluid_properties)
-        
-        residuals[inlet_idx] = self.sim_config.total_flow_rate - inlet_flow
-
         return residuals
 
-    def _build_jacobian(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list) -> np.ndarray:
+    def _build_jacobian(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> np.ndarray:
         """
         Constructs the Jacobian matrix J(P) for the system using finite differences.
         """
@@ -147,16 +140,16 @@ class NonLinearTreeSolver(SolverBase):
         jacobian = lil_matrix((num_unknowns, num_unknowns))
         
         # Base residual
-        f0 = self._evaluate_residual(pressures, network, unknown_node_ids)
+        f0 = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
 
         # Perturb each pressure and calculate the change in the residual
         for j in range(num_unknowns):
             p_perturbed = pressures.copy()
             # Add a small perturbation
-            delta_p = 1e-3 # Pa
+            delta_p = 1.0 # Use a small but not insignificant pressure change
             p_perturbed[j] += delta_p
             
-            f1 = self._evaluate_residual(p_perturbed, network, unknown_node_ids)
+            f1 = self._evaluate_residual(p_perturbed, network, unknown_node_ids, ref_node_id)
             
             # The j-th column of the Jacobian is (f1 - f0) / delta_p
             jacobian[:, j] = (f1 - f0) / delta_p
