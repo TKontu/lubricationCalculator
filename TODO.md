@@ -40,125 +40,176 @@ This section outlines the plan to refactor the project by introducing a `Network
 
 ---
 
-# Robust NonLinear Tree Solver Implementation Plan
+# Unified Hydraulic Network Solver Architecture Plan
 
 ## Overview
+This plan addresses the architectural challenges of having multiple specialized solvers and proposes a unified approach that automatically selects the optimal solver based on network topology while maintaining numerical robustness.
 
-This plan addresses the critical numerical stability issues in the `NonLinearTreeSolver` that are causing NaN propagation, singular Jacobian matrices, and convergence failures in the test suite.
+## Current Solver Assessment
 
-## High Priority Tasks (Completed)
+### **Existing Solvers Analysis:**
+1. **NodalMatrixSolver**: Iterative conductance matrix method, handles both tree and looped networks but poor convergence for strong non-linearities
+2. **RobustNonLinearSolver**: Flow-based Newton-Raphson for looped networks, mathematically handles trees but computationally inefficient (O(n³) vs O(n))
+3. **NonLinearTreeSolver**: Nodal pressure formulation for tree networks, appropriate algorithm but currently has numerical stability issues
 
-- [x] **Implement Robust Initial Guess Generation**
-- [x] **Add Comprehensive Input Validation**
-- [x] **Implement Adaptive Finite Difference Step Size**
-- [x] **Add NaN/Infinity Detection and Handling**
-- [x] **Implement Robust Bracketing Algorithm**
+### **Key Insight:**
+- **Tree Networks**: Unique flow distribution, optimal with pressure-based formulation (O(n) structure, O(n²) Newton-Raphson)
+- **Looped Networks**: Multiple flow paths, requires flow-based formulation with cycle constraints
+- **Hybrid Networks**: Can be solved by RobustNonLinearSolver but benefit from decomposition strategies
 
+## High Priority: Unified Solver Architecture
 
-## Medium Priority Tasks
-
-### 6. Add Jacobian Matrix Conditioning and Singularity Detection
-
-- **Problem**: Singular Jacobian matrices cause linear solver failures
+### 1. Implement Automatic Topology Detection
+- **Problem**: Users must manually select solvers, no automatic optimization
 - **Solution**:
-  - Calculate matrix condition number and determinant
-  - Add regularization for near-singular matrices
-  - Implement pseudo-inverse for rank-deficient systems
-  - Add warning/error messages for ill-conditioned systems
+  - Create `NetworkTopologyAnalyzer` class
+  - Implement `classify_network(network) -> NetworkTopology`
+  - Detect: TREE, LOOPED, HYBRID topologies using NetworkX
+  - Add network characteristics analysis (strong non-linearities, outlet count, etc.)
 
-### 7. Implement Adaptive Damping Factor
-
-- **Problem**: Fixed damping factor causes oscillations or slow convergence
+### 2. Create Unified Solver Interface
+- **Problem**: Multiple solver interfaces confuse users and duplicate code
 - **Solution**:
-  - Implement line search to find optimal step size
-  - Use adaptive damping based on residual reduction
-  - Add backtracking when solution diverges
-  - Monitor convergence history for oscillation detection
+  ```python
+  class UnifiedNetworkSolver(SolverBase):
+      def solve(self, network: FlowNetwork) -> Dict:
+          topology = self.topology_analyzer.classify_network(network)
+          solver = self.solver_factory.create_solver(topology, network)
+          return solver.solve(network)
+  ```
 
-### 8. Fix Flow Direction Sign Consistency
-
-- **Problem**: Inconsistent sign conventions in flow calculations
+### 3. Fix NonLinearTreeSolver Numerical Issues (Critical)
+- **Problem**: Tree solver has NaN propagation and convergence failures
 - **Solution**:
-  - Standardize pressure drop calculation: always `from_node - to_node`
-  - Ensure consistent flow direction interpretation
-  - Add clear documentation for sign conventions
-  - Validate flow conservation at each node
+  - [x] Implement robust initial guess generation (completed)
+  - [x] Add comprehensive input validation (completed)
+  - [x] Implement adaptive finite difference step size (completed)
+  - [x] Add NaN/infinity detection and handling (completed)
+  - [x] Implement robust bracketing algorithm (completed)
+  - [ ] **Still needed**: Jacobian conditioning, adaptive damping, pressure bounds
 
-### 9. Add Pressure Bounds Checking
-
-- **Problem**: Unphysical negative pressures cause numerical issues
+### 4. Implement Solver Factory with Fallback Chain
+- **Problem**: No fallback when primary solver fails
 - **Solution**:
-  - Implement pressure bounds: `outlet_pressure ≤ P ≤ inlet_pressure`
-  - Add penalty methods for constraint violations
-  - Project solutions back to feasible region
-  - Use logarithmic pressure variables for positivity
+  ```python
+  class SolverFactory:
+      def create_solver_chain(self, topology: NetworkTopology, network: FlowNetwork) -> List[SolverBase]:
+          if topology == NetworkTopology.TREE:
+              return [NonLinearTreeSolver(self.config), 
+                      NodalMatrixSolver(self.config)]
+          elif topology == NetworkTopology.LOOPED:
+              return [RobustNonLinearSolver(self.config), 
+                      NodalMatrixSolver(self.config)]
+          else:  # HYBRID
+              return [RobustNonLinearSolver(self.config), 
+                      NodalMatrixSolver(self.config)]
+  ```
 
-### 10. Implement Fallback Solver Strategies
-
-- **Problem**: Newton-Raphson can fail on difficult problems
+### 5. Add Solver Performance Monitoring
+- **Problem**: No visibility into solver performance and selection decisions
 - **Solution**:
-  - Add quasi-Newton methods (BFGS, DFP) as fallbacks
-  - Implement hybrid methods (Newton + bisection)
-  - Add continuation methods for difficult cases
-  - Use linear solver as final fallback
+  - Add solver timing and convergence metrics
+  - Log solver selection rationale
+  - Monitor fallback usage patterns
+  - Add performance comparison between solvers
 
-## Low Priority Tasks
+## Medium Priority: Enhanced Solver Capabilities
 
-### 11. Add Comprehensive Error Handling and Logging
-
-- **Problem**: Debugging failures is difficult without proper logging
+### 6. Implement Hybrid Network Decomposition
+- **Problem**: Hybrid networks inefficiently solved as monolithic systems
 - **Solution**:
-  - Add detailed logging at each iteration
-  - Include residual norms, pressure values, and convergence metrics
-  - Log warning for near-singular matrices
-  - Add debug mode with extensive diagnostics
+  - Decompose hybrid networks into tree and looped regions
+  - Solve each region with appropriate solver
+  - Handle interface coupling between regions
+  - Use decomposition for large networks to improve scalability
 
-### 12. Implement Convergence Monitoring and Oscillation Detection
+### 7. Complete Tree Solver Robustness
+- **Remaining Issues**:
+  - Add Jacobian matrix conditioning and singularity detection
+  - Implement adaptive damping factor with line search
+  - Add pressure bounds checking and constraint handling
+  - Fix flow direction sign consistency throughout the solver
 
-- **Problem**: Solver may oscillate without detecting it
+### 8. Optimize RobustNonLinearSolver for Tree Networks
+- **Problem**: Flow-based solver inefficient for tree networks
 - **Solution**:
-  - Monitor residual history for oscillation patterns
-  - Add stall detection (no progress for N iterations)
-  - Implement solution averaging for oscillating solutions
-  - Add adaptive tolerance based on problem difficulty
+  - Add tree network detection within RobustNonLinearSolver
+  - Implement simplified algorithm path for tree networks
+  - Skip cycle detection and pressure loop equations for trees
+  - Use BFS pressure calculation instead of matrix solve
+
+### 9. Add Adaptive Algorithm Selection
+- **Problem**: Static topology classification may miss optimal solver selection
+- **Solution**:
+  - Monitor convergence behavior during solving
+  - Switch solvers if convergence stalls or diverges
+  - Use machine learning to predict optimal solver based on network characteristics
+  - Implement solver recommendation system
+
+## Low Priority: Advanced Features
+
+### 10. Implement Continuation Methods
+- **Problem**: Difficult networks may require parameter continuation
+- **Solution**:
+  - Add parameter continuation for difficult convergence cases
+  - Implement pseudo-arc-length continuation for bifurcation problems
+  - Add automatic restart with different initial conditions
+
+### 11. Add Parallel Processing Support
+- **Problem**: Large networks could benefit from parallel processing
+- **Solution**:
+  - Implement parallel Jacobian construction
+  - Add parallel residual evaluation
+  - Use parallel linear solvers for large sparse systems
+  - Implement parallel region solving for decomposed networks
+
+### 12. Enhanced Error Handling and Diagnostics
+- **Problem**: Debugging solver failures is difficult
+- **Solution**:
+  - Add comprehensive logging throughout solver chain
+  - Implement solver failure analysis and reporting
+  - Add network diagnostic tools (conditioning, singularity detection)
+  - Create solver performance profiling tools
 
 ## Implementation Strategy
 
-### Phase 1: Core Stability (High Priority)
+### Phase 1: Core Architecture (Immediate)
+1. Fix remaining NonLinearTreeSolver issues to pass all tests
+2. Implement topology detection and unified solver interface
+3. Create solver factory with fallback mechanisms
+4. Add comprehensive testing for all topology types
 
-1. Start with robust initial guess generation
-2. Add comprehensive input validation
-3. Implement adaptive finite differences
-4. Add NaN/infinity detection
+### Phase 2: Performance Optimization (Medium Term)
+1. Optimize RobustNonLinearSolver for tree networks
+2. Implement hybrid network decomposition
+3. Add adaptive algorithm selection
+4. Performance benchmarking and optimization
 
-### Phase 2: Numerical Robustness (Medium Priority)
-
-1. Fix flow direction consistency
-2. Add Jacobian conditioning
-3. Implement adaptive damping
-4. Add pressure bounds checking
-
-### Phase 3: Advanced Features (Low Priority)
-
-1. Add fallback strategies
-2. Implement comprehensive logging
-3. Add convergence monitoring
+### Phase 3: Advanced Features (Long Term)
+1. Add continuation methods and parallel processing
+2. Implement machine learning-based solver selection
+3. Create comprehensive diagnostics and monitoring
+4. Add support for specialized network types (thermal, transient, etc.)
 
 ## Testing Strategy
-
-- Run existing test suite after each major change
-- Add unit tests for each new validation function
-- Test with pathological cases (near-zero flows, extreme pressure ratios)
-- Benchmark against linear solver for low-flow cases
-- Test convergence on complex network topologies
+- **Unit Tests**: Each solver component tested independently
+- **Integration Tests**: Unified solver interface with all topology types
+- **Performance Tests**: Benchmark solver selection and execution times
+- **Regression Tests**: Ensure no degradation in existing functionality
+- **Stress Tests**: Large networks, pathological cases, extreme parameter values
 
 ## Expected Outcomes
+- **User Experience**: Single, simple interface for all network types
+- **Performance**: Optimal solver selection based on network characteristics
+- **Reliability**: Robust fallback mechanisms prevent solver failures
+- **Maintainability**: Unified architecture reduces code duplication
+- **Scalability**: Efficient algorithms for both small and large networks
 
-- Elimination of NaN-related failures
-- Improved convergence reliability
-- Better handling of edge cases
-- More informative error messages
-- Increased numerical stability across all test cases
+## Migration Strategy
+- **Backward Compatibility**: Existing solver interfaces remain available
+- **Gradual Migration**: CLI and GUI can migrate to unified interface over time
+- **Documentation**: Clear guidelines for when to use unified vs. specialized solvers
+- **Testing**: Extensive validation that unified solver produces identical results
 
 ---
 

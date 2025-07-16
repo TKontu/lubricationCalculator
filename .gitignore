@@ -1,6 +1,10 @@
 .venv/
 *.pyc
 __pycache__/
+/__pycache/*
+/__pycache__/*
+pycache/*
+__pycache__
 mark-git-safe.ps1
 mark-git-safe.sh
 .pytest_cache/

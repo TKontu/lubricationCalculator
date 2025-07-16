@@ -30,6 +30,7 @@ class NonLinearTreeSolver(SolverBase):
         Main entry point for solving the hydraulic network using a robust
         nodal pressure formulation.
         """
+        self.logger.info("Starting non-linear solver.")
         # 0. Comprehensive Input Validation
         is_valid, errors = network.validate_network()
         if not is_valid:
@@ -43,41 +44,29 @@ class NonLinearTreeSolver(SolverBase):
         # 1. Identify a reference node (an outlet) and unknown nodes
         ref_node_id = network.outlet_nodes[0].id
         unknown_node_ids = [nid for nid in network.nodes if nid != ref_node_id]
-        node_to_idx = {nid: i for i, nid in enumerate(unknown_node_ids)}
+        self.logger.debug(f"Reference node: {ref_node_id}")
+        self.logger.debug(f"Unknown nodes: {unknown_node_ids}")
 
-        # 2. Get initial guess for node pressures from the linear solver
-        linear_solver = NodalMatrixSolver(self.sim_config, self.config)
-        initial_solution = linear_solver.solve(network)
-        
-        # Validate the initial guess
-        initial_pressures = initial_solution['node_pressures']
-        if not all(np.isfinite(list(initial_pressures.values()))):
-            self.logger.warning("Linear solver produced non-finite initial pressures. Falling back to a simple guess.")
-            # Fallback to a simple pressure distribution
-            inlet_pressure = self.sim_config.inlet_pressure or 200000.0
-            outlet_pressure = self.sim_config.outlet_pressure or 101325.0
-            for nid in initial_pressures:
-                initial_pressures[nid] = (inlet_pressure + outlet_pressure) / 2.0
-
-        pressures = np.array([initial_pressures[nid] for nid in unknown_node_ids])
+        # 2. Get initial guess for node pressures
+        inlet_pressure = self.sim_config.inlet_pressure or 200000.0
+        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+        pressures = np.full(len(unknown_node_ids), (inlet_pressure + outlet_pressure) / 2.0)
+        self.logger.debug(f"Initial pressures guess: {pressures}")
 
         converged = False
         for i in range(self.config.max_iterations):
-            self.logger.debug(f"Iteration {i}: pressures = {pressures}")
-            
             # 3. Evaluate the residual F(P)
             residual = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
-            self.logger.debug(f"Iteration {i}: residual norm = {np.linalg.norm(residual)}")
-
+            residual_norm = np.linalg.norm(residual)
+            
             # 4. Check for convergence
-            if np.linalg.norm(residual) < self.config.tolerance:
+            if residual_norm < self.config.tolerance:
                 self.logger.info(f"Converged after {i} iterations.")
                 converged = True
                 break
 
             # 5. Build the Jacobian matrix J(P)
             jacobian = self._build_jacobian(pressures, network, unknown_node_ids, ref_node_id)
-            self.logger.debug(f"Iteration {i}: jacobian = \n{jacobian.toarray()}")
 
             # 6. Solve the linear system J * delta_P = -F
             from scipy.sparse.linalg import spsolve
@@ -87,18 +76,20 @@ class NonLinearTreeSolver(SolverBase):
                 self.logger.error(f"Linear solve failed: {e}. Jacobian may be singular.")
                 break # Exit loop on failure
             
-            self.logger.debug(f"Iteration {i}: delta_p = {delta_p}")
+            # Limit the pressure update
+            max_delta_p = 100000.0
+            delta_p = np.clip(delta_p, -max_delta_p, max_delta_p)
 
             # 7. Update the solution with damping and pressure bounds
             alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, ref_node_id)
-            self.logger.debug(f"Iteration {i}: alpha = {alpha}")
             pressures += alpha * delta_p
 
             # Enforce pressure bounds
-            inlet_pressure = self.sim_config.inlet_pressure or 1e6 # A large default
-            outlet_pressure = self.sim_config.outlet_pressure or 0.0
             pressures = np.clip(pressures, outlet_pressure, inlet_pressure)
         
+        if not converged:
+            self.logger.warning(f"Solver did not converge after {self.config.max_iterations} iterations. Final residual norm: {residual_norm:.6f}")
+
         # 8. Post-process results
         final_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
         final_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
