@@ -53,10 +53,10 @@ class TreeSolver(SolverBase):
         if not network.outlet_nodes:
             raise ValueError("Network must have at least one outlet node.")
 
-        # 1. Identify a reference node (an outlet) and unknown nodes
-        ref_node_id = network.outlet_nodes[0].id
-        unknown_node_ids = [nid for nid in network.nodes if nid != ref_node_id]
-        self._report_progress(f"Reference node: {ref_node_id}, Unknown nodes: {len(unknown_node_ids)}")
+        # 1. Identify boundary nodes (all outlets) and unknown nodes
+        outlet_node_ids = [node.id for node in network.outlet_nodes]
+        unknown_node_ids = [nid for nid in network.nodes if nid not in outlet_node_ids]
+        self._report_progress(f"Outlet nodes: {outlet_node_ids}, Unknown nodes: {len(unknown_node_ids)} (includes inlet)")
 
         # Define pressure bounds from simulation config
         inlet_pressure = self.sim_config.inlet_pressure or 200000.0
@@ -79,7 +79,7 @@ class TreeSolver(SolverBase):
         for i in range(self.sim_config.max_iterations):
             iterations_run = i
             # 3. Evaluate the residual F(P)
-            residual = self._evaluate_residual(pressures, network, unknown_node_ids, ref_node_id)
+            residual = self._evaluate_residual(pressures, network, unknown_node_ids, outlet_node_ids)
             residual_norm = np.linalg.norm(residual)
             
             # 4. Check for convergence - use both absolute and relative criteria
@@ -112,7 +112,7 @@ class TreeSolver(SolverBase):
             last_residual_norm = residual_norm
 
             # 5. Build the Jacobian matrix J(P)
-            jacobian = self._build_jacobian(pressures, network, unknown_node_ids, ref_node_id)
+            jacobian = self._build_jacobian(pressures, network, unknown_node_ids, outlet_node_ids)
 
             # 6. Solve the linear system J * delta_P = -F
             from scipy.sparse.linalg import spsolve
@@ -130,7 +130,7 @@ class TreeSolver(SolverBase):
             delta_p = np.clip(delta_p, -max_delta_p, max_delta_p)
 
             # 7. Update the solution with line search
-            alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, ref_node_id)
+            alpha = self._line_search(pressures, delta_p, residual, network, unknown_node_ids, outlet_node_ids)
             if alpha < 1e-8:
                 self._report_progress("Alpha too small, solver may be stuck. Stopping.")
                 warnings.append("Line search failed: alpha too small.")
@@ -164,20 +164,35 @@ class TreeSolver(SolverBase):
         # 8. Post-process results
         self._report_progress("Packaging results.")
         final_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
-        final_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
+        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+        for outlet_id in outlet_node_ids:
+            final_pressures[outlet_id] = outlet_pressure
+        
+        # Ensure inlet pressure is included in final solution
+        if network.inlet_node.id in final_pressures:
+            self._report_progress(f"Inlet pressure solved: {final_pressures[network.inlet_node.id]:.0f} Pa")
+        else:
+            self._report_progress("WARNING: Inlet pressure not found in solution")
             
         solution = self._get_final_solution(converged, iterations_run + 1, final_pressures, network)
         solution["warnings"].extend(warnings)
         return solution
 
-    def _evaluate_residual(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> np.ndarray:
+    def _evaluate_residual(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, outlet_node_ids) -> np.ndarray:
         """
         Evaluates the residual vector F(P) for the system of non-linear equations.
         The residual at each node is the net flow imbalance.
         """
-        # Create a full pressure vector including the reference pressure
+        # Create a full pressure vector including all outlet pressures
         full_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
-        full_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
+        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+        
+        # Handle both single outlet_id (string) and list of outlet_ids
+        if isinstance(outlet_node_ids, str):
+            outlet_node_ids = [outlet_node_ids]
+        
+        for outlet_id in outlet_node_ids:
+            full_pressures[outlet_id] = outlet_pressure
 
         residuals = np.zeros(len(unknown_node_ids))
 
@@ -204,7 +219,7 @@ class TreeSolver(SolverBase):
             
         return residuals
 
-    def _build_jacobian(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> np.ndarray:
+    def _build_jacobian(self, pressures: np.ndarray, network: FlowNetwork, unknown_node_ids: list, outlet_node_ids) -> np.ndarray:
         """
         Constructs the Jacobian matrix J(P) for the system using analytical derivatives.
         """
@@ -215,7 +230,14 @@ class TreeSolver(SolverBase):
         node_map = {node_id: i for i, node_id in enumerate(unknown_node_ids)}
 
         full_pressures = {nid: p for nid, p in zip(unknown_node_ids, pressures)}
-        full_pressures[ref_node_id] = self.sim_config.outlet_pressure or 0.0
+        outlet_pressure = self.sim_config.outlet_pressure or 101325.0
+        
+        # Handle both single outlet_id (string) and list of outlet_ids
+        if isinstance(outlet_node_ids, str):
+            outlet_node_ids = [outlet_node_ids]
+        
+        for outlet_id in outlet_node_ids:
+            full_pressures[outlet_id] = outlet_pressure
 
         for conn in network.connections:
             from_id, to_id = conn.from_node.id, conn.to_node.id
@@ -234,11 +256,13 @@ class TreeSolver(SolverBase):
                 if to_id in node_map:
                     j = node_map[to_id]
                     jacobian[i, j] -= g
-                    jacobian[j, i] -= g
 
             if to_id in node_map:
                 j = node_map[to_id]
                 jacobian[j, j] += g
+                if from_id in node_map:
+                    i = node_map[from_id]
+                    jacobian[j, i] -= g
         
         # Add adaptive regularization term to improve conditioning
         # Scale regularization based on the typical diagonal magnitude
@@ -257,7 +281,7 @@ class TreeSolver(SolverBase):
             
         return jacobian.tocsr()
 
-    def _line_search(self, pressures: np.ndarray, delta_p: np.ndarray, residual: np.ndarray, network: FlowNetwork, unknown_node_ids: list, ref_node_id: str) -> float:
+    def _line_search(self, pressures: np.ndarray, delta_p: np.ndarray, residual: np.ndarray, network: FlowNetwork, unknown_node_ids: list, outlet_node_ids) -> float:
         """
         Performs a robust line search to find an optimal step size alpha.
         Uses Armijo condition with adaptive backtracking.
@@ -280,7 +304,7 @@ class TreeSolver(SolverBase):
             p_new = np.clip(p_new, outlet_pressure, inlet_pressure)
             
             try:
-                new_residual = self._evaluate_residual(p_new, network, unknown_node_ids, ref_node_id)
+                new_residual = self._evaluate_residual(p_new, network, unknown_node_ids, outlet_node_ids)
                 new_residual_norm_sq = np.dot(new_residual, new_residual)
                 
                 # Armijo condition: sufficient decrease
@@ -312,12 +336,8 @@ class TreeSolver(SolverBase):
             dp = p_from - p_to
             component_flows[conn.component.id] = conn.component.calculate_flow_rate(dp, self.fluid_properties)
             
-        # Calculate total flow rate at the inlet
-        total_flow_rate = 0
-        if network.inlet_node:
-            for conn in network.connections:
-                if conn.from_node.id == network.inlet_node.id:
-                    total_flow_rate += component_flows[conn.component.id]
+        # The total flow rate is a boundary condition from the simulation config.
+        total_flow_rate = self.sim_config.total_flow_rate
         
         # Assemble the solution dictionary
         solution = {
