@@ -117,10 +117,9 @@ class Channel(FlowComponent):
             return (128 * μ * self.length) / (math.pi * self.diameter**4)
 
         # Use a small perturbation for the finite difference calculation
-        delta_q = flow_rate * 1e-6
-        if delta_q == 0:
-            delta_q = 1e-9 # Avoid zero perturbation if flow_rate is very small but non-zero
-
+        # Use a more robust perturbation size that balances accuracy and numerical stability
+        delta_q = max(abs(flow_rate) * 1e-6, 1e-9)
+        
         p1 = self.calculate_pressure_drop(flow_rate, fluid_properties)
         p2 = self.calculate_pressure_drop(flow_rate + delta_q, fluid_properties)
         
