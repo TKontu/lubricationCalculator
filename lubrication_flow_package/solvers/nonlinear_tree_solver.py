@@ -93,7 +93,8 @@ class TreeSolver(SolverBase):
                 pressure_change = np.linalg.norm(pressures - prev_pressures) if 'prev_pressures' in locals() else float('inf')
                 relative_pressure_change = pressure_change / (np.linalg.norm(pressures) + 1e-12)
                 
-                if relative_pressure_change < 1e-8 and residual_norm < 1e-3:
+                # Only accept relative convergence if residual is also within tolerance
+                if relative_pressure_change < 1e-8 and residual_norm < self.sim_config.tolerance:
                     self._report_progress(f"Converged with relative tolerance after {i} iterations.")
                     converged = True
                     break
@@ -104,9 +105,14 @@ class TreeSolver(SolverBase):
             if abs(residual_norm - last_residual_norm) < 1e-9:
                 stagnation_counter += 1
                 if stagnation_counter > 5:
-                    warnings.append("Solver stalled. Converged with reduced tolerance.")
-                    converged = True
-                    break
+                    # Only accept stagnation if residual is within tolerance
+                    if residual_norm < self.sim_config.tolerance:
+                        warnings.append("Solver stalled but residual is within tolerance.")
+                        converged = True
+                        break
+                    else:
+                        warnings.append("Solver stalled with large residual. Stopping.")
+                        break
             else:
                 stagnation_counter = 0
             last_residual_norm = residual_norm
