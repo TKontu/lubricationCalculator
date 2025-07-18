@@ -14,6 +14,8 @@ from scipy.sparse import lil_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
 from typing import Dict, List, Tuple, Optional, Callable
 import logging
+import logging.config
+import os
 from lubrication_flow_package.components.connector import Connector, ConnectorType
 
 
@@ -46,6 +48,13 @@ class NodalMatrixSolver(SolverBase):
             logger: Optional logger for debugging output.
         """
         super().__init__(sim_config)
+
+        # Ensure logging is configured from logging.ini
+        logging_config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'logging.ini')
+        logging_config_path = os.path.abspath(logging_config_path)
+        if os.path.exists(logging_config_path):
+            logging.config.fileConfig(logging_config_path, disable_existing_loggers=False)
+
         self.gravity = 9.81
         self.logger = logger or logging.getLogger(__name__)
 

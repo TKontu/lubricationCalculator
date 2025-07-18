@@ -6,6 +6,8 @@ import numpy as np
 from scipy.optimize import newton
 from typing import Dict, Optional, Callable
 import logging
+import logging.config
+import os
 from collections import deque
 
 from ..config.simulation_config import SimulationConfig
@@ -23,8 +25,14 @@ class TreeSolver(SolverBase):
         Initializes the TreeSolver.
         """
         super().__init__(sim_config, progress_callback)
+
+        # Ensure logging is configured from logging.ini
+        logging_config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'logging.ini')
+        logging_config_path = os.path.abspath(logging_config_path)
+        if os.path.exists(logging_config_path):
+            logging.config.fileConfig(logging_config_path, disable_existing_loggers=False)
+            
         self.logger = logging.getLogger(__name__)
-        #logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
     def solve(self, network: FlowNetwork) -> Dict:
