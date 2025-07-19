@@ -62,14 +62,28 @@ class TreeSolver(SolverBase):
         inlet_pressure = self.sim_config.inlet_pressure or 200000.0
         outlet_pressure = self.sim_config.outlet_pressure or 101325.0
 
-        # 2. Get initial guess for node pressures using a linear solver
-        self._report_progress("Getting initial pressure guess from linear solver.")
-        linear_solver = NodalMatrixSolver(self.sim_config)
-        linear_solution = linear_solver.solve(network)
-        initial_pressures = linear_solution['node_pressures']
+        # 2. Get initial guess for node pressures using improved heuristic
+        self._report_progress("Getting initial pressure guess using improved heuristic.")
+        try:
+            # First try the linear solver
+            linear_solver = NodalMatrixSolver(self.sim_config)
+            linear_solution = linear_solver.solve(network)
+            initial_pressures = linear_solution['node_pressures']
+            
+            # Check if linear solver gave a reasonable result
+            pressures_array = np.array([initial_pressures[nid] for nid in unknown_node_ids])
+            if np.allclose(pressures_array, inlet_pressure, rtol=1e-6):
+                # Linear solver failed - all pressures are inlet pressure
+                self.logger.warning("Linear solver gave poor initial guess, using improved heuristic")
+                initial_pressures = self._get_improved_initial_guess(network, unknown_node_ids, inlet_pressure, outlet_pressure)
+            else:
+                self.logger.debug("Linear solver provided good initial guess")
+        except Exception as e:
+            self.logger.warning(f"Linear solver failed: {e}, using improved heuristic")
+            initial_pressures = self._get_improved_initial_guess(network, unknown_node_ids, inlet_pressure, outlet_pressure)
         
         pressures = np.array([initial_pressures[nid] for nid in unknown_node_ids])
-        self.logger.debug(f"Initial pressures guess from linear solver: {pressures}")
+        self.logger.debug(f"Initial pressures guess: {pressures}")
 
         converged = False
         last_residual_norm = -1
@@ -362,3 +376,135 @@ class TreeSolver(SolverBase):
             solution["warnings"].append("Solver did not converge within the specified tolerance or iterations.")
             
         return solution
+
+    def _get_improved_initial_guess(self, network: FlowNetwork, unknown_node_ids: list, 
+                                   inlet_pressure: float, outlet_pressure: float) -> Dict:
+        """
+        Create an improved initial pressure guess based on network topology.
+        Uses distance-based pressure interpolation along paths from inlet to outlets.
+        """
+        self.logger.debug("Creating improved initial pressure guess")
+        
+        # Initialize all pressures to inlet pressure
+        initial_pressures = {nid: inlet_pressure for nid in network.nodes}
+        
+        # Set outlet pressures
+        for outlet in network.outlet_nodes:
+            initial_pressures[outlet.id] = outlet_pressure
+        
+        # Calculate pressure drops along paths from inlet to each outlet
+        inlet_id = network.inlet_node.id
+        
+        for outlet in network.outlet_nodes:
+            try:
+                # Find path from inlet to this outlet
+                path = self._find_path_to_outlet(network, inlet_id, outlet.id)
+                if path:
+                    # Calculate total resistance along this path
+                    total_resistance = self._calculate_path_resistance(path)
+                    
+                    # Estimate flow through this path (rough approximation)
+                    estimated_flow = self.sim_config.total_flow_rate / len(network.outlet_nodes)
+                    
+                    # Calculate pressure drops along the path
+                    cumulative_pressure = inlet_pressure
+                    cumulative_resistance = 0.0
+                    
+                    for i, connection in enumerate(path):
+                        # Calculate resistance for this component
+                        component_resistance = self._estimate_component_resistance(connection.component, estimated_flow)
+                        cumulative_resistance += component_resistance
+                        
+                        # Calculate pressure at the end of this component
+                        if total_resistance > 0:
+                            pressure_drop_ratio = cumulative_resistance / total_resistance
+                            target_pressure = inlet_pressure - pressure_drop_ratio * (inlet_pressure - outlet_pressure)
+                        else:
+                            target_pressure = outlet_pressure
+                        
+                        # Update pressure for the target node
+                        to_node_id = connection.to_node.id
+                        if to_node_id in unknown_node_ids:
+                            # Use the minimum pressure seen so far (more conservative)
+                            initial_pressures[to_node_id] = min(initial_pressures.get(to_node_id, inlet_pressure), target_pressure)
+                        
+                        cumulative_pressure = target_pressure
+                        
+            except Exception as e:
+                self.logger.warning(f"Could not calculate path to outlet {outlet.id}: {e}")
+                # Fall back to linear interpolation for nodes without calculated paths
+                continue
+        
+        # For any nodes still at inlet pressure, use linear interpolation
+        for node_id in unknown_node_ids:
+            if abs(initial_pressures[node_id] - inlet_pressure) < 1e-6:
+                # Linear interpolation between inlet and average outlet pressure
+                avg_outlet_pressure = np.mean([initial_pressures[outlet.id] for outlet in network.outlet_nodes])
+                initial_pressures[node_id] = (inlet_pressure + avg_outlet_pressure) / 2
+        
+        self.logger.debug(f"Improved initial pressures: {[(nid, initial_pressures[nid]) for nid in unknown_node_ids]}")
+        return initial_pressures
+    
+    def _find_path_to_outlet(self, network: FlowNetwork, start_id: str, end_id: str) -> list:
+        """Find a path from start node to end node using BFS."""
+        from collections import deque
+        
+        if start_id == end_id:
+            return []
+        
+        # BFS to find path
+        queue = deque([(start_id, [])])
+        visited = set()
+        
+        while queue:
+            current_id, path = queue.popleft()
+            
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            
+            # Check all connections from current node
+            for connection in network.connections:
+                if connection.from_node.id == current_id:
+                    new_path = path + [connection]
+                    
+                    if connection.to_node.id == end_id:
+                        return new_path
+                    
+                    if connection.to_node.id not in visited:
+                        queue.append((connection.to_node.id, new_path))
+        
+        return []  # No path found
+    
+    def _calculate_path_resistance(self, path: list) -> float:
+        """Calculate total resistance along a path."""
+        total_resistance = 0.0
+        estimated_flow = self.sim_config.total_flow_rate / 2  # Rough estimate
+        
+        for connection in path:
+            component_resistance = self._estimate_component_resistance(connection.component, estimated_flow)
+            total_resistance += component_resistance
+        
+        return total_resistance
+    
+    def _estimate_component_resistance(self, component, flow_rate: float) -> float:
+        """Estimate component resistance for initial guess calculations."""
+        try:
+            # For very small flows, use a reasonable estimate
+            if abs(flow_rate) < 1e-10:
+                flow_rate = 1e-6  # Use small but non-zero flow
+            
+            # Calculate pressure drop for estimated flow
+            pressure_drop = component.calculate_pressure_drop(flow_rate, self.fluid_properties)
+            
+            # Resistance = dP/Q
+            if abs(flow_rate) > 1e-12:
+                resistance = abs(pressure_drop) / abs(flow_rate)
+            else:
+                resistance = 1e6  # Large resistance for zero flow
+            
+            return resistance
+            
+        except Exception as e:
+            self.logger.warning(f"Could not estimate resistance for component {component.id}: {e}")
+            return 1e6  # Default large resistance

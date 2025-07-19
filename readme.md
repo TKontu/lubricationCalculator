@@ -1,97 +1,87 @@
 # Lubrication Flow Network Calculator
 
-This project is a Python-based tool for simulating and analyzing fluid flow in lubrication networks. It allows users to build complex hydraulic circuits, define component properties, and solve for steady-state pressures and flow rates using a robust nodal-matrix solver.
+This project is a Python-based engineering tool for simulating and analyzing steady-state fluid flow in hydraulic lubrication networks. It allows users to define complex circuits, model component pressure losses, and solve for pressures and flow rates using several numerical methods.
 
-Primarily it is a tool in which a specific network is built and simulated.
-The input is always the network structure and geometry and a fixed input flow volume.
-
-Output of the simulation should be pressure at each node: input and all other nodes of the system.
-Pressure loss at different parts of the system is of high interest:
-Most important result is the output flow distribution at different end points of the tree-like branching network with nozzles at ends of each branch path.
-Target is to achieve relatively good accuracy in the pressure and flow distribution approximations for a given network.
-
-Parameters:
-Pressure range 0...24 bar. Typically < 4 bar
-Flow rate 0...400 l/min
-Temperature 60 degC
-Oil VG220 / VG320 typically
-Typically the network should operate in laminar regime
-Nozzles of course turbulentic.
-
-Target precision +/- 1 l/min for end points, +/- 0,3 bar compared to measurement of a real physical system.
+The primary input is a network definition (from a JSON or XML file) and a set of simulation parameters, such as total system flow rate and fluid properties. The tool calculates the pressure at each node and the flow rate through each component, with a key focus on the flow distribution to the various outlet points of the network.
 
 ## Key Features
 
-- **Network Modeling:** Construct complex lubrication networks with components like pipes, nozzles, and junctions.
-- **Nodal-Matrix Solver:** A powerful iterative solver that calculates node pressures and edge flows while conserving mass.
-- **Non-Linear Components:** Accurately models non-linear pressure-flow relationships in hydraulic components.
-- **Fluid Properties:** Calculates fluid viscosity based on oil type (e.g., SAE30, VG460) and temperature.
-- **Command-Line Interface:** Provides a CLI for running simulations and analyzing network behavior.
-- **Extensible:** The modular design allows for the addition of new component types and solver configurations.
+- **Flexible Network Modeling:** Construct complex hydraulic networks with components like pipes, nozzles, and fittings.
+- **Multiple Solvers:**
+    - **`nodal`:** A linear solver for rapid estimation.
+    - **`tree_nonlinear`:** A robust and accurate non-linear solver for tree-like (radial) networks using the Newton-Raphson method.
+    - **`robust_newton`:** A non-linear solver capable of handling networks with loops.
+- **Configurable Physics:**
+    - Accurately models non-linear pressure-flow relationships.
+    - Calculates temperature-dependent fluid viscosity for various oil types (e.g., SAE30, VG460).
+- **Data-Driven Configuration:** Define networks and simulation parameters using simple JSON or XML files.
+- **Command-Line Interface:** A full-featured CLI for creating, validating, and simulating networks.
+- **Extensible Design:** The modular architecture (Builder pattern, Strategy pattern for solvers) makes it easy to add new components or solution algorithms.
 
-## Project Structure
+## Project Architecture
 
 - `lubrication_flow_package/`: The core Python package.
-  - `components/`: Defines hydraulic components (e.g., `Channel`, `Nozzle`).
-  - `network/`: Contains the `FlowNetwork` class for building circuits.
-  - `solvers/`: Implements the `NodalMatrixSolver`.
-  - `cli/`: The command-line interface.
-- `examples/`: JSON files defining example networks.
-- `tests/`: Unit tests for the solver and components.
-- `main.py`: The main entry point for running the application.
+  - `cli/`: Command-line interface for user interaction.
+  - `config/`: Handles loading and saving of network and simulation configurations.
+  - `components/`: Defines hydraulic components (`Channel`, `Nozzle`, `Connector`).
+  - `network/`: Core data structures for the flow network (`FlowNetwork`, `Node`).
+  - `solvers/`: Implements the various numerical solvers.
+  - `utils/`: Provides utilities like the `NetworkBuilder` and fluid property calculators.
+- `examples/`: Example network definition files.
+- `tests/`: Unit and integration tests.
+- `main.py`: The main entry point for the CLI application.
 
 ## Getting Started
 
 ### Installation
 
 1.  Clone the repository.
-2.  Install the required dependencies:
+2.  It is recommended to create a virtual environment:
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
+    ```
+3.  Install the required dependencies:
     ```bash
     pip install -r requirements.txt
     ```
 
-### Running a Simulation
+## Usage
 
-The easiest way to run a simulation is to use the built-in example networks. You can create and simulate them on the fly using the `create-and-simulate` command.
+The application is controlled via the command-line interface.
+
+### 1. Create a Network Template
+
+To get started, generate a template network configuration file.
 
 ```bash
-# Simulate the simple example network
-python -m lubrication_flow_package.cli.network_cli create-and-simulate simple
+python main.py network template -o my_network.json
+```
+This will create a `my_network.json` file that you can customize.
 
-# Simulate the complex example network with the robust Newton solver
-python -m lubrication_flow_package.cli.network_cli create-and-simulate complex --solver robust_newton
+### 2. Simulate a Network
+
+Run a simulation using your configuration file and a chosen solver.
+
+```bash
+# Simulate with the default non-linear tree solver
+python main.py network simulate examples/simple_branch.json --solver tree_nonlinear
+
+# Simulate a more complex network with the robust Newton solver
+python main.py network simulate examples/complex_network.json --solver robust_newton
 ```
 
-### Building a Custom Network
+### 3. Validate a Network
 
-You can easily build your own custom networks using the `NetworkBuilder`. Here is an example of how to create a simple network:
+You can check a configuration file for structural integrity and completeness without running a full simulation.
 
-```python
-from lubrication_flow_package.utils.network_builder import NetworkBuilder
-from lubrication_flow_package.config.simulation_config import SimulationConfig
-
-sim_config = SimulationConfig(
-    total_flow_rate=0.02,
-    temperature=50.0,
-    inlet_pressure=250000.0
-)
-
-builder = NetworkBuilder(sim_config)
-
-network = (builder
-    .set_inlet("inlet")
-    .add_pipe("inlet", "j1", length=5, diameter=0.1)
-    .add_pipe("j1", "out1", length=10, diameter=0.08)
-    .add_outlet("out1")
-    .build()
-)
-
-# This network object can now be used with a solver.
+```bash
+python main.py network validate examples/simple_branch.json
 ```
 
 ### Running Tests
 
-To run the unit tests, use pytest:
+To run the suite of unit tests, use pytest:
 
 ```bash
 pytest
