@@ -22,17 +22,12 @@ class FlowNetwork:
         self.adjacency_list: Dict[str, List[Connection]] = defaultdict(list)
         self.reverse_adjacency: Dict[str, List[Connection]] = defaultdict(list)
     
-    def add_node(self, node: Node) -> Node:
+    def _add_node(self, node: Node) -> Node:
         """Add a node to the network"""
         self.nodes[node.id] = node
         return node
     
-    def create_node(self, name: str = "", elevation: float = 0.0) -> Node:
-        """Create and add a new node to the network"""
-        node = Node(name=name, elevation=elevation)
-        return self.add_node(node)
-    
-    def connect_components(self, from_node: Node, to_node: Node, 
+    def _connect_components(self, from_node: Node, to_node: Node, 
                           component: 'FlowComponent') -> Connection:
         """Connect two nodes through a component"""
         connection = Connection(from_node, to_node, component)
@@ -44,11 +39,11 @@ class FlowNetwork:
         
         return connection
     
-    def set_inlet(self, node: Node):
+    def _set_inlet(self, node: Node):
         """Set the inlet node for the network"""
         self.inlet_node = node
     
-    def add_outlet(self, node: Node):
+    def _add_outlet(self, node: Node):
         """Add an outlet node to the network"""
         if node not in self.outlet_nodes:
             self.outlet_nodes.append(node)
@@ -129,6 +124,13 @@ class FlowNetwork:
             if (conn.from_node.id == u_id and conn.to_node.id == v_id) or \
                (conn.from_node.id == v_id and conn.to_node.id == u_id):
                 return conn
+        return None
+
+    def get_component_by_name(self, name: str) -> Optional['FlowComponent']:
+        """Get a component by its name."""
+        for connection in self.connections:
+            if connection.component.name == name:
+                return connection.component
         return None
     
     def to_networkx(self):

@@ -10,6 +10,7 @@ from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
 from lubrication_flow_package.config.simulation_config import SimulationConfig
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 class TestUnequalResistanceDoubleCounting:
     
@@ -24,27 +25,29 @@ class TestUnequalResistanceDoubleCounting:
         Path-based algorithm: Will still double-count shared component incorrectly
         """
         
-        net = FlowNetwork("unequal_resistance_test")
+        builder = NetworkBuilder()
+        net = (builder
+            .set_inlet("source")
+            .add_node("junction")
+            .add_outlet("sink1") # Easy path
+            .add_outlet("sink2") # Hard path
+            .add_pipe("source", "junction", length=1.0, diameter=0.020, name="shared")
+            .add_pipe("junction", "sink1", length=1.0, diameter=0.020, name="easy") # Low resistance
+            .add_pipe("junction", "sink2", length=10.0, diameter=0.005, name="hard") # High resistance
+            .build()
+        )
+        net.name = "unequal_resistance_test"
         
-        source = net.create_node("source")
-        junction = net.create_node("junction")
-        sink1 = net.create_node("sink1")  # Easy path
-        sink2 = net.create_node("sink2")  # Hard path
-        
-        net.set_inlet(source)
-        net.add_outlet(sink1)
-        net.add_outlet(sink2)
-        
+        source = net.get_node("source")
+        sink1 = net.get_node("sink1")
+        sink2 = net.get_node("sink2")
+
         Q_total = 0.001  # 1 L/s
         
         # Create components with very different resistances
-        shared = Channel(diameter=0.020, length=1.0, component_id="shared")
-        easy_branch = Channel(diameter=0.020, length=1.0, component_id="easy")    # Low resistance
-        hard_branch = Channel(diameter=0.005, length=10.0, component_id="hard")   # High resistance (small diameter, long)
-        
-        net.connect_components(source, junction, shared)
-        net.connect_components(junction, sink1, easy_branch)
-        net.connect_components(junction, sink2, hard_branch)
+        shared = net.get_component_by_name("shared")
+        easy_branch = net.get_component_by_name("easy")
+        hard_branch = net.get_component_by_name("hard")
         
         # Calculate actual resistances for analysis
         fluid_props = {'density': 900.0, 'viscosity': 1e-3}
@@ -95,8 +98,8 @@ class TestUnequalResistanceDoubleCounting:
         
         # Check mass conservation
         print("\n=== Mass Conservation Check ===")
-        shared_flow = actual_flows["shared"]
-        branch_sum = actual_flows["easy"] + actual_flows["hard"]
+        shared_flow = actual_flows[shared.id]
+        branch_sum = actual_flows[easy_branch.id] + actual_flows[hard_branch.id]
         mass_error = abs(shared_flow - branch_sum)
         
         print(f"Flow into junction: {shared_flow:.6f}")

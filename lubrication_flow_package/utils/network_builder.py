@@ -54,7 +54,7 @@ class NetworkBuilder:
         creation_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         node = Node(name=name, **creation_kwargs)
         self._nodes[name] = node
-        self._network.add_node(node)
+        self._network._add_node(node)
         return node
 
     def add_node(self, name: str, elevation: float = 0.0, **kwargs) -> 'NetworkBuilder':
@@ -81,7 +81,7 @@ class NetworkBuilder:
             elevation: Optional elevation for the node.
         """
         node = self._get_or_create_node(node_name, elevation=elevation)
-        self._network.set_inlet(node)
+        self._network._set_inlet(node)
         return self
 
     def add_outlet(self, node_name: str, pressure: float = 101325.0, elevation: Optional[float] = None) -> 'NetworkBuilder':
@@ -94,7 +94,7 @@ class NetworkBuilder:
             elevation: Optional elevation for the node.
         """
         node = self._get_or_create_node(node_name, pressure=pressure, elevation=elevation)
-        self._network.add_outlet(node)
+        self._network._add_outlet(node)
         return self
 
     def add_pipe(self, from_node_name: str, to_node_name: str, length: float, diameter: float, 
@@ -113,7 +113,7 @@ class NetworkBuilder:
         
         pipe = Channel(length=length, diameter=diameter, roughness=roughness, name=name)
         
-        self._network.connect_components(from_node=from_node, to_node=to_node, component=pipe)
+        self._network._connect_components(from_node=from_node, to_node=to_node, component=pipe)
         return self
 
     def add_nozzle(self, from_node_name: str, to_node_name: str, diameter: float, 
@@ -132,7 +132,7 @@ class NetworkBuilder:
         
         nozzle = Nozzle(nozzle_type=nozzle_type, diameter=diameter, name=name)
         
-        self._network.connect_components(from_node=from_node, to_node=to_node, component=nozzle)
+        self._network._connect_components(from_node=from_node, to_node=to_node, component=nozzle)
         return self
 
     def add_fitting(self, from_node_name: str, to_node_name: str, connector_type: ConnectorType, 
@@ -151,7 +151,7 @@ class NetworkBuilder:
         
         fitting = Connector(connector_type=connector_type, diameter=diameter, name=name, **kwargs)
         
-        self._network.connect_components(from_node=from_node, to_node=to_node, component=fitting)
+        self._network._connect_components(from_node=from_node, to_node=to_node, component=fitting)
         return self
 
     def add_tee_junction(self, main_in: str, main_out: str, branch_out: str, 

@@ -17,6 +17,7 @@ from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.components.nozzle import Nozzle
 from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.network.connection import Connection
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 
 class TestSolverConvergence:
@@ -40,71 +41,38 @@ class TestSolverConvergence:
     @pytest.fixture
     def simple_network(self):
         """Create a simple 2-node network for testing."""
-        network = FlowNetwork()
-        
-        # Add nodes
-        inlet = Node("inlet", 0.0, 0.0, 0.0)
-        outlet = Node("outlet", 1.0, 0.0, 0.0)
-        
-        network.add_node(inlet)
-        network.add_node(outlet)
-        
-        # Add a simple channel connection
-        channel = Channel(0.01, 1.0, 0.0001, "channel_1")  # 10mm diameter, 1m length
-        connection = network.connect_components(inlet, outlet, channel)
-        
-        network.set_inlet(inlet)
-        network.add_outlet(outlet)
-        
+        builder = NetworkBuilder()
+        network = (builder
+            .set_inlet("inlet")
+            .add_pipe("inlet", "outlet", length=1.0, diameter=0.01, name="channel_1")
+            .add_outlet("outlet")
+            .build()
+        )
         return network
 
     @pytest.fixture
     def complex_network(self):
         """Create a more complex network similar to the failing case."""
-        network = FlowNetwork()
-        
-        # Create nodes
-        nodes = {}
-        for i in range(10):
-            node = Node(f"node_{i}", i * 0.1, 0.0, 0.0)
-            nodes[f"node_{i}"] = node
-            network.add_node(node)
-        
-        # Create connections with varying resistances
-        connections = []
+        builder = NetworkBuilder()
+        builder.set_inlet("node_0")
+
+        # Create main branch
         for i in range(9):
-            from_node = nodes[f"node_{i}"]
-            to_node = nodes[f"node_{i+1}"]
-            
-            # Alternate between channels and nozzles
+            from_name = f"node_{i}"
+            to_name = f"node_{i+1}"
             if i % 2 == 0:
-                component = Channel(0.005 + i * 0.001, 0.1, 0.0001, f"channel_{i}")
+                builder.add_pipe(from_name, to_name, length=0.1, diameter=0.005 + i * 0.001, name=f"channel_{i}")
             else:
-                component = Nozzle(0.003 + i * 0.0005, component_id=f"nozzle_{i}")
-            
-            connection = network.connect_components(from_node, to_node, component)
-            connections.append(connection)
+                builder.add_nozzle(from_name, to_name, diameter=0.003 + i * 0.0005, name=f"nozzle_{i}")
         
-        # Add branching
-        branch_node = Node("branch", 0.5, 0.1, 0.0)
-        network.add_node(branch_node)
+        # Add side branch
+        builder.add_pipe("node_5", "branch", length=0.1, diameter=0.008, name="branch_channel")
+        builder.add_nozzle("branch", "branch_outlet", diameter=0.004, name="branch_nozzle")
+
+        builder.add_outlet("node_9")
+        builder.add_outlet("branch_outlet")
         
-        branch_outlet = Node("branch_outlet", 0.5, 0.2, 0.0)
-        network.add_node(branch_outlet)
-        
-        # Connect branch
-        branch_channel = Channel(0.008, 0.1, 0.0001, "branch_channel")
-        branch_connection = network.connect_components(nodes["node_5"], branch_node, branch_channel)
-        
-        branch_nozzle = Nozzle(0.004, component_id="branch_nozzle")
-        branch_outlet_connection = network.connect_components(branch_node, branch_outlet, branch_nozzle)
-        
-        # Set inlet and outlets
-        network.set_inlet(nodes["node_0"])
-        network.add_outlet(nodes["node_9"])
-        network.add_outlet(branch_outlet)
-        
-        return network
+        return builder.build()
 
     def test_simple_network_convergence(self, simple_network, basic_config):
         """Test convergence on a simple 2-node network."""
@@ -113,7 +81,8 @@ class TestSolverConvergence:
         
         assert result["converged"] == True
         assert result["iterations"] < 10
-        assert abs(result["component_flows"]["channel_1"]) > 0
+        channel = simple_network.get_component_by_name("channel_1")
+        assert abs(result["component_flows"][channel.id]) > 0
         
     def test_jacobian_condition_number(self, complex_network, basic_config):
         """Test the condition number of the Jacobian matrix."""
@@ -298,27 +267,14 @@ class TestSolverConvergence:
 
     def test_solver_with_extreme_resistances(self, basic_config):
         """Test solver behavior with extreme resistance values."""
-        network = FlowNetwork()
-        
-        # Create nodes
-        inlet = Node("inlet", 0.0, 0.0, 0.0)
-        mid = Node("mid", 0.5, 0.0, 0.0)
-        outlet = Node("outlet", 1.0, 0.0, 0.0)
-        
-        network.add_node(inlet)
-        network.add_node(mid)
-        network.add_node(outlet)
-        
-        # Very high resistance component
-        high_resistance = Channel(0.001, 1.0, 0.0001, "high_res")  # Very small diameter
-        conn1 = network.connect_components(inlet, mid, high_resistance)
-        
-        # Very low resistance component
-        low_resistance = Channel(0.05, 0.1, 0.0001, "low_res")  # Large diameter
-        conn2 = network.connect_components(mid, outlet, low_resistance)
-        
-        network.set_inlet(inlet)
-        network.add_outlet(outlet)
+        builder = NetworkBuilder()
+        network = (builder
+            .set_inlet("inlet")
+            .add_pipe("inlet", "mid", length=1.0, diameter=0.001, name="high_res") # Very small diameter
+            .add_pipe("mid", "outlet", length=0.1, diameter=0.05, name="low_res") # Large diameter
+            .add_outlet("outlet")
+            .build()
+        )
         
         solver = TreeSolver(basic_config)
         result = solver.solve(network)
@@ -331,26 +287,17 @@ class TestSolverConvergence:
 
     def test_network_with_cycles(self, basic_config):
         """Test solver behavior with cyclic networks (should fail gracefully)."""
-        network = FlowNetwork()
+        builder = NetworkBuilder()
+        builder.set_inlet("node_0")
         
         # Create a simple cycle
-        nodes = {}
         for i in range(4):
-            node = Node(f"node_{i}", i * 0.25, 0.0, 0.0)
-            nodes[f"node_{i}"] = node
-            network.add_node(node)
-        
-        # Create cycle connections
-        for i in range(4):
-            from_node = nodes[f"node_{i}"]
-            to_node = nodes[f"node_{(i+1)%4}"]
-            
-            channel = Channel(0.01, 0.25, 0.0001, f"channel_{i}")
-            connection = network.connect_components(from_node, to_node, channel)
-        
-        # Add inlet and outlet
-        network.set_inlet(nodes["node_0"])
-        network.add_outlet(nodes["node_2"])
+            from_name = f"node_{i}"
+            to_name = f"node_{(i+1)%4}"
+            builder.add_pipe(from_name, to_name, length=0.25, diameter=0.01, name=f"channel_{i}")
+
+        builder.add_outlet("node_2")
+        network = builder.build()
         
         solver = TreeSolver(basic_config)
         

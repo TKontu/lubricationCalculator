@@ -4,30 +4,31 @@ from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.components.connector import Connector
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 from lubrication_flow_package.config.simulation_config import SimulationConfig
 
 # Helper to create a simple two-node one-channel network
 def create_two_node_network(pressure_A, pressure_B, conductance):
-    network = FlowNetwork("Test Network")
+    builder = NetworkBuilder()
+    network = (builder
+        .set_inlet("A")
+        .add_pipe("A", "B", length=1.0, diameter=0.1, name="channel")
+        .add_outlet("B")
+        .build()
+    )
+    network.name = "Test Network"
 
-    node_A = Node(name="A", pressure=pressure_A, elevation=0.0)
-    node_B = Node(name="B", pressure=pressure_B, elevation=0.0)
-
-    network.add_node(node_A)
-    network.add_node(node_B)
-    network.set_inlet(node_A)
-    network.add_outlet(node_B)
-
-    # Resistance R = 1/G
+    # Get the channel and monkeypatch its pressure drop for predictable behavior
+    channel = network.get_component_by_name("channel")
     R = 1.0 / conductance
-    channel = Channel(diameter=0.1, length=1.0)
-    # Monkeypatch pressure_drop method for predictable behavior
     channel.calculate_pressure_drop = lambda Q, props: R * Q
 
-    connection = network.connect_components(node_A, node_B, channel)
+    # Set node pressures after building
+    network.get_node("A").pressure = pressure_A
+    network.get_node("B").pressure = pressure_B
 
-    return network, connection.component.id
+    return network, channel.id
 
 # Fixtures for re-use
 @pytest.fixture
@@ -60,19 +61,17 @@ def test_zero_flow_when_no_pressure_difference(solver, fluid_properties):
     assert abs(flow[comp_id]) < 1e-8
 
 def test_inclined_network_hydrostatic_adjustment(solver, fluid_properties):
-    network = FlowNetwork("Inclined Network")
-    node_A = Node(name="A", elevation=0.0)
-    node_B = Node(name="B", elevation=2.0)  # 2 m height difference
+    builder = NetworkBuilder()
+    network = (builder
+        .set_inlet("A", elevation=0.0)
+        .add_pipe("A", "B", length=1.0, diameter=0.1, name="channel")
+        .add_outlet("B", elevation=2.0) # 2 m height difference
+        .build()
+    )
+    network.name = "Inclined Network"
 
-    network.add_node(node_A)
-    network.add_node(node_B)
-    network.set_inlet(node_A)
-    network.add_outlet(node_B)
-
-    channel = Channel(diameter=0.1, length=1.0)
+    channel = network.get_component_by_name("channel")
     channel.calculate_pressure_drop = lambda Q, props: 10000 * Q  # R = 10000 Pa·s/m³
-
-    network.connect_components(node_A, node_B, channel)
 
     solver.sim_config.total_flow_rate = 0.002
     solver.sim_config.inlet_pressure = 200000 # 1 bar gauge
@@ -87,6 +86,8 @@ def test_inclined_network_hydrostatic_adjustment(solver, fluid_properties):
     # Hydrostatic pressure: ρgΔz where Δz = elevation difference
     rho = solver_fluid_props["density"]  # Use solver's actual density
     g = 9.81
+    node_A = network.get_node("A")
+    node_B = network.get_node("B")
     delta_z = node_B.elevation - node_A.elevation  # Height difference (positive upward)
     dp_hydrostatic = rho * g * delta_z
     

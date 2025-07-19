@@ -7,6 +7,7 @@ from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolv
 from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.config.simulation_config import SimulationConfig
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 @pytest.fixture
 def solved_network():
@@ -22,14 +23,14 @@ def solved_network():
     )
     solver = NodalMatrixSolver(sim_config)
     
-    net = FlowNetwork("test_print")
-    n1 = net.create_node("N1")
-    n2 = net.create_node("N2")
-    net.set_inlet(n1)
-    net.add_outlet(n2)
-    
-    channel = Channel(length=1.0, diameter=0.01, component_id="C1")
-    net.connect_components(n1, n2, channel)
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("N1")
+        .add_outlet("N2")
+        .add_pipe("N1", "N2", length=1.0, diameter=0.01, name="C1")
+        .build()
+    )
+    net.name = "test_print"
     
     solution = solver.solve(net)
     return solver, net, solution

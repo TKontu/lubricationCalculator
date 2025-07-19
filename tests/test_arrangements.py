@@ -6,6 +6,8 @@ from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.components.nozzle import Nozzle, NozzleType
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
 from lubrication_flow_package.config.simulation_config import SimulationConfig
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
+
 
 @pytest.fixture
 def solver():
@@ -19,38 +21,33 @@ def test_single_pipe_nozzle_flow_driven(solver):
     T = 40.0              # °C
     p_out = 101_325       # Pa
 
-    # Build network
-    net = FlowNetwork("Single-branch")
-    n_in, n_mid, n_out = Node("Inlet"), Node("Mid"), Node("Outlet")
-    for n in (n_in, n_mid, n_out):
-        net.add_node(n)
-    net.set_inlet(n_in)
-    net.add_outlet(n_out)
-
-    # Components
-    pipe   = Channel(diameter=0.012, length=1.0, component_id="pipe")
-    nozzle = Nozzle(
-        diameter=0.002,
-        nozzle_type=NozzleType.SHARP_EDGED,
-        component_id="nozzle"
+    # Build network using the builder
+    builder = NetworkBuilder(solver.sim_config)
+    network = (builder
+        .set_inlet("Inlet")
+        .add_pipe("Inlet", "Mid", length=1.0, diameter=0.012, name="pipe")
+        .add_nozzle("Mid", "Outlet", diameter=0.002, nozzle_type=NozzleType.SHARP_EDGED, name="nozzle")
+        .add_outlet("Outlet", pressure=p_out)
+        .build()
     )
-
-    # Connections
-    net.connect_components(n_in,  n_mid, pipe)
-    net.connect_components(n_mid, n_out, nozzle)
+    network.name = "Single-branch"
 
     # Solve fixing the flow
     solver.sim_config.total_flow_rate = Q
     solver.sim_config.temperature = T
     solver.sim_config.inlet_pressure = 5e6
     solver.sim_config.outlet_pressure = p_out
-    info = solver.solve(net)
+    info = solver.solve(network)
     flows = info.get("component_flows", {})
+
+    # Get components for pressure drop calculation
+    pipe = network.get_component_by_name("pipe")
+    nozzle = network.get_component_by_name("nozzle")
 
     # 1) Check mass conservation
     assert pytest.approx(info["total_flow_rate"], rel=1e-4) == Q
-    assert pytest.approx(flows["pipe"], rel=1e-4)   == Q
-    assert pytest.approx(flows["nozzle"], rel=1e-4) == Q
+    assert pytest.approx(flows[pipe.id], rel=1e-4)   == Q
+    assert pytest.approx(flows[nozzle.id], rel=1e-4) == Q
 
     # 2) Reconstruct expected inlet pressure: ΔP_pipe + ΔP_nozzle + p_out
     dp_pipe   = pipe.calculate_pressure_drop(Q, info["fluid_properties"])
@@ -67,57 +64,54 @@ def test_t_split_flow_driven(solver):
     T = 40.0               # °C
     p_out = 101_325        # Pa
 
-    # Build network
-    net = FlowNetwork("Parallel-branches")
-    n_in, n_j = Node("Inlet"), Node("Junction")
-    n_b1, n_out1 = Node("Branch1"), Node("Outlet1")
-    n_b2, n_out2 = Node("Branch2"), Node("Outlet2")
-    for n in (n_in, n_j, n_b1, n_b2, n_out1, n_out2):
-        net.add_node(n)
-    net.set_inlet(n_in)
-    net.add_outlet(n_out1)
-    net.add_outlet(n_out2)
-
-    # Components
-    inlet_pipe = Channel(diameter=0.024, length=1.0, component_id="inlet_pipe")
-    pipe1      = Channel(diameter=0.012, length=1.0, component_id="pipe1")
-    pipe2      = Channel(diameter=0.012, length=1.0, component_id="pipe2")
-    nozzle1    = Nozzle(0.002, NozzleType.SHARP_EDGED, component_id="nozzle1")
-    nozzle2    = Nozzle(0.003, NozzleType.SHARP_EDGED, component_id="nozzle2")
-
-    # Connections
-    net.connect_components(n_in,   n_j,    inlet_pipe)
-    net.connect_components(n_j,    n_b1,   pipe1)
-    net.connect_components(n_b1,   n_out1, nozzle1)
-    net.connect_components(n_j,    n_b2,   pipe2)
-    net.connect_components(n_b2,   n_out2, nozzle2)
+    # Build network using the builder
+    builder = NetworkBuilder(solver.sim_config)
+    network = (builder
+        .set_inlet("Inlet")
+        .add_pipe("Inlet", "Junction", length=1.0, diameter=0.024, name="inlet_pipe")
+        .add_pipe("Junction", "Branch1", length=1.0, diameter=0.012, name="pipe1")
+        .add_nozzle("Branch1", "Outlet1", diameter=0.002, nozzle_type=NozzleType.SHARP_EDGED, name="nozzle1")
+        .add_pipe("Junction", "Branch2", length=1.0, diameter=0.012, name="pipe2")
+        .add_nozzle("Branch2", "Outlet2", diameter=0.003, nozzle_type=NozzleType.SHARP_EDGED, name="nozzle2")
+        .add_outlet("Outlet1", pressure=p_out)
+        .add_outlet("Outlet2", pressure=p_out)
+        .build()
+    )
+    network.name = "Parallel-branches"
 
     # Solve fixing the total flow
     solver.sim_config.total_flow_rate = Q_tot
     solver.sim_config.temperature = T
     solver.sim_config.inlet_pressure = 5e6
     solver.sim_config.outlet_pressure = p_out
-    info = solver.solve(net)
+    info = solver.solve(network)
     flows = info.get("component_flows", {})
+
+    # Get components for checks
+    inlet_pipe = network.get_component_by_name("inlet_pipe")
+    pipe1 = network.get_component_by_name("pipe1")
+    nozzle1 = network.get_component_by_name("nozzle1")
+    pipe2 = network.get_component_by_name("pipe2")
+    nozzle2 = network.get_component_by_name("nozzle2")
 
     # 1) Total flow delivered
     assert pytest.approx(info["total_flow_rate"], rel=1e-4) == Q_tot
 
     # 2) Mass conservation in each leg
-    assert pytest.approx(flows["pipe1"], rel=1e-4)  == flows["nozzle1"]
-    assert pytest.approx(flows["pipe2"], rel=1e-4)  == flows["nozzle2"]
+    assert pytest.approx(flows[pipe1.id], rel=1e-4)  == flows[nozzle1.id]
+    assert pytest.approx(flows[pipe2.id], rel=1e-4)  == flows[nozzle2.id]
 
     # 3) Approximate split in L/min (2 mm vs 3 mm)
-    Q1_Lpm = flows["pipe1"] * 60e3
-    Q2_Lpm = flows["pipe2"] * 60e3
+    Q1_Lpm = flows[pipe1.id] * 60e3
+    Q2_Lpm = flows[pipe2.id] * 60e3
     assert pytest.approx(Q1_Lpm, rel=0.1) ==  9.9
     assert pytest.approx(Q2_Lpm, rel=0.1) == 22.1
 
     # 4) Reconstruct expected inlet pressure via one branch + inlet pipe
-    dp_inlet = inlet_pipe.calculate_pressure_drop(flows["inlet_pipe"], info["fluid_properties"])
+    dp_inlet = inlet_pipe.calculate_pressure_drop(flows[inlet_pipe.id], info["fluid_properties"])
     dp_branch1 = (
-        pipe1.calculate_pressure_drop(flows["pipe1"], info["fluid_properties"]) +
-        nozzle1.calculate_pressure_drop(flows["nozzle1"], info["fluid_properties"])
+        pipe1.calculate_pressure_drop(flows[pipe1.id], info["fluid_properties"]) +
+        nozzle1.calculate_pressure_drop(flows[nozzle1.id], info["fluid_properties"])
     )
     expected_pin = dp_inlet + dp_branch1 + p_out
 

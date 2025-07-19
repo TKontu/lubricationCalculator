@@ -16,8 +16,10 @@ from lubrication_flow_package.network.flow_network import FlowNetwork
 from lubrication_flow_package.components.base import FlowComponent
 from lubrication_flow_package.components.channel import Channel
 from lubrication_flow_package.network.node import Node
+from lubrication_flow_package.network.connection import Connection
 from lubrication_flow_package.solvers.nodal_matrix_solver import NodalMatrixSolver
 from lubrication_flow_package.config.simulation_config import SimulationConfig
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 # --- Constants and Fixtures ---
 
@@ -72,15 +74,24 @@ def test_hydrostatic_pressure_simple_vertical_pipe(solver, fluid_properties):
     Tests if the solver correctly accounts for hydrostatic pressure in a vertical pipe.
     With zero flow, the pressure difference should exactly equal ρgΔz.
     """
-    net = FlowNetwork("vertical_pipe")
-    n_bottom = net.create_node(name="bottom", elevation=0.0)
-    n_top = net.create_node(name="top", elevation=10.0) # 10m height difference
-    net.set_inlet(n_bottom)
-    net.add_outlet(n_top)
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("bottom", elevation=0.0)
+        .add_outlet("top", elevation=10.0) # 10m height difference
+        .add_pipe("bottom", "top", length=10, diameter=0.1, name="pipe")
+        .build()
+    )
+    net.name = "vertical_pipe"
 
-    # Use a component with very high resistance to ensure flow is near zero
+    # Replace the standard channel with a mock component
     comp = LinearResistance(resistance=1e12, component_id="R1")
-    net.connect_components(n_bottom, n_top, comp)
+    n_bottom = net.get_node("bottom")
+    n_top = net.get_node("top")
+    # Find the original connection and replace its component
+    for conn in net.connections:
+        if conn.from_node == n_bottom and conn.to_node == n_top:
+            conn.component = comp
+            break
 
     # We set Q_total to 0 to focus purely on the static pressure.
     solver.sim_config.total_flow_rate = 0.0
@@ -138,13 +149,21 @@ def test_nonlinear_residual_is_zero_after_convergence(solver, caplog):
     between the physical and linearized pressure drops, indicating convergence
     to the true physical solution.
     """
-    net = FlowNetwork("nonlinear_residual_test")
-    n_in = net.create_node("in")
-    n_out = net.create_node("out")
-    net.set_inlet(n_in)
-    net.add_outlet(n_out)
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("in")
+        .add_outlet("out")
+        .add_pipe("in", "out", length=1, diameter=1, name="pipe")
+        .build()
+    )
+    net.name = "nonlinear_residual_test"
     comp = QuadraticResistance(a=1000.0, b=500000.0, component_id="NL_resid_test")
-    net.connect_components(n_in, n_out, comp)
+    n_in = net.get_node("in")
+    n_out = net.get_node("out")
+    for conn in net.connections:
+        if conn.from_node == n_in and conn.to_node == n_out:
+            conn.component = comp
+            break
     fluid_properties = {'density': DENSITY, 'viscosity': VISCOSITY}
 
     with caplog.at_level("DEBUG"):
@@ -174,18 +193,28 @@ def test_hydrostatic_utube_zero_flow(solver, fluid_properties):
     pressures results in zero flow, which would prove the hydrostatic
     contributions to the 'b' vector are correctly balanced.
     """
-    net = FlowNetwork("u_tube_test")
-    n_in = net.create_node("in", elevation=10.0)
-    n_mid = net.create_node("mid", elevation=0.0)
-    n_out = net.create_node("out", elevation=10.0)
-    net.set_inlet(n_in)
-    net.add_outlet(n_out)
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("in", elevation=10.0)
+        .add_node("mid", elevation=0.0)
+        .add_outlet("out", elevation=10.0)
+        .add_pipe("in", "mid", length=1, diameter=1, name="down_pipe")
+        .add_pipe("mid", "out", length=1, diameter=1, name="up_pipe")
+        .build()
+    )
+    net.name = "u_tube_test"
 
     # Two pipes forming the U-shape
     comp1 = LinearResistance(resistance=1000.0, component_id="down_pipe")
     comp2 = LinearResistance(resistance=1000.0, component_id="up_pipe")
-    net.connect_components(n_in, n_mid, comp1)
-    net.connect_components(n_mid, n_out, comp2)
+    n_in = net.get_node("in")
+    n_mid = net.get_node("mid")
+    n_out = net.get_node("out")
+    for conn in net.connections:
+        if conn.from_node == n_in and conn.to_node == n_mid:
+            conn.component = comp1
+        if conn.from_node == n_mid and conn.to_node == n_out:
+            conn.component = comp2
 
     # With zero total flow, the internal flows should also be zero
     # as the hydrostatic effects should cancel out.
@@ -204,16 +233,24 @@ def test_solver_with_correct_nonlinear_logic(solver, fluid_properties):
     drop for a non-linear component in a simple flow-controlled system.
     It is based on the validated logic from debug_solver2.py.
     """
-    net = FlowNetwork("correct_nonlinear_test")
-    n_in = net.create_node("in")
-    n_out = net.create_node("out")
-    net.set_inlet(n_in)
-    net.add_outlet(n_out)
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("in")
+        .add_outlet("out")
+        .add_pipe("in", "out", length=1, diameter=1, name="pipe")
+        .build()
+    )
+    net.name = "correct_nonlinear_test"
 
     # Component: ΔP = 1000Q + 500000Q²
     a, b = 1000.0, 500000.0
     comp = QuadraticResistance(a=a, b=b, component_id="NL_correct")
-    net.connect_components(n_in, n_out, comp)
+    n_in = net.get_node("in")
+    n_out = net.get_node("out")
+    for conn in net.connections:
+        if conn.from_node == n_in and conn.to_node == n_out:
+            conn.component = comp
+            break
 
     # Run the solver
     solution = solver.solve(net)
@@ -237,15 +274,23 @@ def test_nonlinear_resistance_component(solver, fluid_properties):
     Tests if the solver converges to the correct pressure drop for a
     component with a non-linear (quadratic) resistance.
     """
-    net = FlowNetwork("nonlinear_test")
-    n_in = net.create_node(name="inlet")
-    n_out = net.create_node(name="outlet")
-    net.set_inlet(n_in)
-    net.add_outlet(n_out)
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("inlet")
+        .add_outlet("outlet")
+        .add_pipe("inlet", "outlet", length=1, diameter=1, name="pipe")
+        .build()
+    )
+    net.name = "nonlinear_test"
 
     # ΔP = 1000Q + 500000Q²
     comp = QuadraticResistance(a=1000.0, b=500000.0, component_id="NL1")
-    net.connect_components(n_in, n_out, comp)
+    n_in = net.get_node("inlet")
+    n_out = net.get_node("outlet")
+    for conn in net.connections:
+        if conn.from_node == n_in and conn.to_node == n_out:
+            conn.component = comp
+            break
 
     solution = solver.solve(net)
     pressures = solution.get("node_pressures", {})
@@ -263,21 +308,34 @@ def test_series_parallel_network_analytical_solution(solver, fluid_properties):
     Tests a Y-network (one series element followed by two parallel branches)
     and compares the result to the analytical solution.
     """
-    net = FlowNetwork("y_network")
-    n_in = net.create_node("in")
-    n_j = net.create_node("junction")
-    n_out = net.create_node("out")
-    net.set_inlet(n_in)
-    net.add_outlet(n_out) # Both branches converge to the same outlet
+    builder = NetworkBuilder()
+    net = (builder
+        .set_inlet("in")
+        .add_node("junction")
+        .add_outlet("out") # Both branches converge to the same outlet
+        .add_pipe("in", "junction", length=1, diameter=1, name="pipe1")
+        .add_pipe("junction", "out", length=1, diameter=1, name="pipe2")
+        .add_pipe("junction", "out", length=1, diameter=1, name="pipe3")
+        .build()
+    )
+    net.name = "y_network"
 
     R1, R2, R3 = 1000.0, 2000.0, 3000.0
     comp1 = LinearResistance(R1, "R1")
     comp2 = LinearResistance(R2, "R2")
     comp3 = LinearResistance(R3, "R3")
 
-    net.connect_components(n_in, n_j, comp1)
-    net.connect_components(n_j, n_out, comp2)
-    net.connect_components(n_j, n_out, comp3)
+    n_in = net.get_node("in")
+    n_j = net.get_node("junction")
+    n_out = net.get_node("out")
+
+    # Replace components
+    conns = list(net.connections) # Make a copy to modify
+    net.connections.clear()
+    net.connections.append(Connection(n_in, n_j, comp1))
+    net.connections.append(Connection(n_j, n_out, comp2))
+    net.connections.append(Connection(n_j, n_out, comp3))
+
 
     solution = solver.solve(net)
     pressures = solution.get("node_pressures", {})
@@ -315,42 +373,29 @@ def test_network_validation_logic():
     Tests the FlowNetwork.validate_network() method for common errors.
     """
     # 1. No inlet defined
-    net1 = FlowNetwork()
-    n1 = net1.create_node("n1")
-    net1.add_outlet(n1)
-    is_valid, errors = net1.validate_network()
+    builder1 = NetworkBuilder()
+    builder1.add_node("n1").add_node("n2").add_pipe("n1", "n2", length=1, diameter=1, name="pipe").add_outlet("n2")
+    is_valid, errors = builder1._network.validate_network()
     assert not is_valid
     assert "No inlet node defined" in errors
 
     # 2. No outlets defined
-    net2 = FlowNetwork()
-    n2 = net2.create_node("n1")
-    net2.set_inlet(n2)
-    is_valid, errors = net2.validate_network()
+    builder2 = NetworkBuilder()
+    builder2.add_node("n1").add_node("n2").add_pipe("n1", "n2", length=1, diameter=1, name="pipe").set_inlet("n1")
+    is_valid, errors = builder2._network.validate_network()
     assert not is_valid
     assert "No outlet nodes defined" in errors
 
     # 3. Isolated (disconnected) node
-    net3 = FlowNetwork()
-    n_in = net3.create_node("in")
-    n_out = net3.create_node("out")
-    net3.create_node("isolated") # This node is not connected
-    net3.set_inlet(n_in)
-    net3.add_outlet(n_out)
-    net3.connect_components(n_in, n_out, LinearResistance(100, "R1"))
-    is_valid, errors = net3.validate_network()
+    builder3 = NetworkBuilder()
+    builder3.set_inlet("in").add_outlet("out").add_node("isolated").add_pipe("in", "out", length=1, diameter=1, name="R1")
+    is_valid, errors = builder3._network.validate_network()
     assert not is_valid
     assert "Isolated nodes: ['isolated']" in errors
 
     # 4. Unreachable outlet
-    net4 = FlowNetwork()
-    n_in = net4.create_node("in")
-    n_out1 = net4.create_node("out1")
-    n_out2 = net4.create_node("out2") # This outlet is not connected
-    net4.set_inlet(n_in)
-    net4.add_outlet(n_out1)
-    net4.add_outlet(n_out2)
-    net4.connect_components(n_in, n_out1, LinearResistance(100, "R1"))
-    is_valid, errors = net4.validate_network()
+    builder4 = NetworkBuilder()
+    builder4.set_inlet("in").add_outlet("out1").add_outlet("out2").add_pipe("in", "out1", length=1, diameter=1, name="R1")
+    is_valid, errors = builder4._network.validate_network()
     assert not is_valid
     assert "Unreachable outlets: ['out2']" in errors

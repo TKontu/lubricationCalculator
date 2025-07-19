@@ -13,6 +13,7 @@ from lubrication_flow_package.network.node import Node
 from lubrication_flow_package.network.connection import Connection
 from lubrication_flow_package.components.base import FlowComponent
 from lubrication_flow_package.config.simulation_config import SimulationConfig
+from lubrication_flow_package.utils.network_builder import NetworkBuilder
 
 # Mock Component for testing purposes
 class MockComponent(FlowComponent):
@@ -44,26 +45,45 @@ def solver():
     return solver_instance
 
 # Helper function to create a FlowNetwork from simplified data
-def create_network(nodes_data, connections_data):
+def create_network(nodes_data, connections_data, inlet_node_id=None, outlet_node_ids=None):
     """Creates a FlowNetwork for testing."""
-    nodes = {node_id: Node(id=node_id, name=name) for node_id, name in nodes_data}
-    connections = []
+    builder = NetworkBuilder()
+    if outlet_node_ids is None:
+        outlet_node_ids = []
+
+    for node_id, name in nodes_data:
+        builder.add_node(name=node_id)  # Use the ID as the name for builder lookup
+
+    if inlet_node_id:
+        builder.set_inlet(inlet_node_id)
+
+    for outlet_id in outlet_node_ids:
+        builder.add_outlet(outlet_id)
+
     for from_id, to_id, comp_name, comp_val in connections_data:
-        comp = MockComponent(name=comp_name, resistance_val=comp_val)
-        conn = Connection(
-            from_node=nodes[from_id],
-            to_node=nodes[to_id],
-            component=comp
+        # The builder doesn't support adding pre-made components,
+        # so we can't use the MockComponent directly in the builder chain.
+        # We build the topology first, then replace the components.
+        builder.add_pipe(from_node_name=from_id, to_node_name=to_id, length=1, diameter=1, name=comp_name)
+
+    network = builder.build()
+    network.name = "TestNetwork"
+
+    # Replace the standard components with our mock components for testing
+    new_connections = []
+    for conn in network.connections:
+        from_id = conn.from_node.name
+        to_id = conn.to_node.name
+        # Find the corresponding resistance value from the original data
+        comp_val = next(c[3] for c in connections_data if c[0] == from_id and c[1] == to_id)
+        mock_comp = MockComponent(name=conn.component.name, resistance_val=comp_val)
+        new_conn = Connection(
+            from_node=conn.from_node,
+            to_node=conn.to_node,
+            component=mock_comp
         )
-        connections.append(conn)
-    
-    network = FlowNetwork(name="TestNetwork")
-    network.nodes = nodes
-    network.connections = connections
-    
-    # Set the first node as the inlet node by default for all tests
-    if nodes_data:
-        network.inlet_node = nodes[nodes_data[0][0]]
+        new_connections.append(new_conn)
+    network.connections = new_connections
         
     return network
 
@@ -81,7 +101,7 @@ def test_jacobian_pressure_simple_square(solver, mocker):
         ("N3", "N4", "C3", 30),  # Corresponds to Q_vector[2]
         ("N4", "N1", "C4", 40)   # Corresponds to Q_vector[3]
     ]
-    network = create_network(nodes_data, connections_data)
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N4"])
     
     # Mock the differential resistance calculation to return predictable values.
     # We'll make it return a unique value for each component (10, 20, 30, 40).
@@ -134,7 +154,7 @@ def test_jacobian_pressure_square_with_reversed_edge(solver, mocker):
         ("N4", "N3", "C3", 30),  # Reversed connection (N4 -> N3)
         ("N4", "N1", "C4", 40)
     ]
-    network = create_network(nodes_data, connections_data)
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N3"])
     
     mocker.patch.object(
         solver, 
@@ -181,7 +201,7 @@ def test_jacobian_pressure_with_branch(solver, mocker):
         ("N4", "N1", "C4", 40), # Cycle component
         ("N2", "N5", "C5", 50)  # Branch component
     ]
-    network = create_network(nodes_data, connections_data)
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N5"])
     
     mocker.patch.object(
         solver, 
@@ -211,17 +231,17 @@ def test_jacobian_pressure_two_cycles(solver, mocker):
     """
     nodes_data = [
         ("N1", "Node 1"), ("N2", "Node 2"), ("N3", "Node 3"),
-        ("N4", "Node 4"), ("N5", "Node 5"), ("N6", "Node 6")
+        ("N4", "Node 4"), ("N5", "Node 5")
     ]
     connections_data = [
         ("N1", "N2", "C1", 10), # Left cycle
-        ("N2", "N4", "C2", 20), # Left cycle
+        ("N2", "N4", "C2", 20), # Shared edge
         ("N4", "N1", "C3", 30), # Left cycle
-        ("N2", "N3", "C4", 40), # Right cycle
+        ("N4", "N3", "C4", 40), # Right cycle
         ("N3", "N5", "C5", 50), # Right cycle
-        ("N5", "N2", "C6", 60)  # Right cycle
+        ("N5", "N4", "C6", 60)  # Right cycle
     ]
-    network = create_network(nodes_data, connections_data)
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N5"])
     
     mocker.patch.object(
         solver, 
@@ -288,9 +308,7 @@ def test_jacobian_is_square(solver):
         ("N3", "N4", "C3", 30),
         ("N4", "N1", "C4", 40)
     ]
-    network = create_network(nodes_data, connections_data)
-    # Define an inlet node to be used as the reference for N-1 mass equations
-    network.inlet_node = network.nodes["N1"]
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N4"])
 
     q_vector = np.ones(len(connections_data))
     cycles = solver._find_fundamental_cycles(network)
@@ -329,9 +347,7 @@ def test_pressure_calculation_double_loop(solver):
         ("N2", "N4", "C4", 40), # Bridge between loops
         ("N4", "N5", "C5", 50)
     ]
-    network = create_network(nodes_data, connections_data)
-    network.inlet_node = network.nodes["N1"]
-    network.add_outlet(network.nodes["N5"])
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N5"])
 
     # Set a known total flow rate
     solver.sim_config.total_flow_rate = 0.1
@@ -353,18 +369,18 @@ def test_pressure_calculation_double_loop(solver):
     
     # Pressure drop from N4 to N5
     dp5 = 50 * flows['C5'] * abs(flows['C5'])
-    p4_from_n5 = pressures['N5'] + dp5
+    p4_from_n5 = pressures[network.get_node("N5").id] + dp5
 
     # Pressure drop from N2 to N4
     dp4 = 40 * flows['C4'] * abs(flows['C4'])
     
     # Pressure at N2
-    p2 = pressures['N2']
+    p2 = pressures[network.get_node("N2").id]
     
     p4_from_n2 = p2 - dp4
 
     # The pressure at N4 should be consistent with the pressure at N5
-    assert pressures['N4'] == pytest.approx(p4_from_n5, rel=1e-3)
+    assert pressures[network.get_node("N4").id] == pytest.approx(p4_from_n5, rel=1e-3)
 
 def test_pressure_calculation_simple_loop(solver):
     """
@@ -378,9 +394,7 @@ def test_pressure_calculation_simple_loop(solver):
         ("N2", "N3", "C2", 20),
         ("N3", "N1", "C3", 30)
     ]
-    network = create_network(nodes_data, connections_data)
-    network.inlet_node = network.nodes["N1"]
-    network.add_outlet(network.nodes["N3"])
+    network = create_network(nodes_data, connections_data, inlet_node_id="N1", outlet_node_ids=["N3"])
 
     # Set a known total flow rate
     solver.sim_config.total_flow_rate = 0.1
@@ -416,6 +430,6 @@ def test_pressure_calculation_simple_loop(solver):
     # Pressure at N1, relative to N3
     p1_expected = p2_expected + dp1
 
-    assert pressures["N1"] == pytest.approx(p1_expected, rel=1e-3)
-    assert pressures["N2"] == pytest.approx(p2_expected, rel=1e-3)
-    assert pressures["N3"] == pytest.approx(0.0, abs=1e-9)
+    assert pressures[network.get_node("N1").id] == pytest.approx(p1_expected, rel=1e-3)
+    assert pressures[network.get_node("N2").id] == pytest.approx(p2_expected, rel=1e-3)
+    assert pressures[network.get_node("N3").id] == pytest.approx(0.0, abs=1e-9)
