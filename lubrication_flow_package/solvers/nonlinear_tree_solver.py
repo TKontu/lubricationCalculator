@@ -194,7 +194,8 @@ class TreeSolver(SolverBase):
         else:
             self._report_progress("WARNING: Inlet pressure not found in solution")
             
-        solution = self._get_final_solution(converged, iterations_run + 1, final_pressures, network)
+        final_residual_norm = np.linalg.norm(self._evaluate_residual(pressures, network, unknown_node_ids, outlet_node_ids))
+        solution = self._get_final_solution(converged, iterations_run + 1, final_pressures, network, final_residual_norm)
         solution["warnings"].extend(warnings)
         return solution
 
@@ -344,7 +345,7 @@ class TreeSolver(SolverBase):
         # If line search fails, return very small step
         return max(alpha, 1e-8)
 
-    def _get_final_solution(self, converged: bool, iterations: int, pressures: Dict, network: FlowNetwork) -> Dict:
+    def _get_final_solution(self, converged: bool, iterations: int, pressures: Dict, network: FlowNetwork, final_residual_norm: float) -> Dict:
         """
         Packages the final results into the standard solution dictionary format.
         """
@@ -363,6 +364,7 @@ class TreeSolver(SolverBase):
         solution = {
             "converged": converged,
             "iterations": iterations,
+            "final_residual_norm": final_residual_norm,
             "component_flows": component_flows,
             "node_pressures": pressures,
             "inlet_pressure": pressures.get(network.inlet_node.id, 0.0),

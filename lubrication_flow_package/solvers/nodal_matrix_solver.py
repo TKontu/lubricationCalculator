@@ -111,7 +111,7 @@ class NodalMatrixSolver(SolverBase):
                 raise ValueError("Network must have at least one outlet node")
 
             # 5. Call iterative solver
-            node_pressures, edge_flows = self._solve_nodal_iterative(
+            node_pressures, edge_flows, final_residual = self._solve_nodal_iterative(
                 network=network,
                 source_node_id=inlet_node.id,
                 sink_node_ids=[o.id for o in outlet_nodes],
@@ -123,6 +123,7 @@ class NodalMatrixSolver(SolverBase):
             solution_info = {
                 'converged':    True,
                 'iterations':   max_iter,      # ideally updated by solver
+                'final_residual_norm': final_residual,
                 'temperature':  temperature,
                 'viscosity':    self.fluid_properties['viscosity'],
                 'oil_type':     self.sim_config.oil_type,
@@ -275,6 +276,7 @@ class NodalMatrixSolver(SolverBase):
         last_max_flow_change = float('inf')
         flow_changes = []
 
+        final_pressure_error = 0.0
         for iteration in range(max_iter):
             # Step 1: Compute resistances and conductances from current flows
             edge_resistances = {}
@@ -444,6 +446,8 @@ class NodalMatrixSolver(SolverBase):
                 pressure_error = abs(dp_physical - (dp_solver + dp_hydro))
                 max_pressure_error = max(max_pressure_error, pressure_error)
             
+            final_pressure_error = max_pressure_error
+            
             # Calculate mass conservation error
             mass_conservation_error = self._calculate_mass_conservation_error(
                 network, new_edge_flows, source_node_id, sink_node_ids, Q_total
@@ -484,7 +488,7 @@ class NodalMatrixSolver(SolverBase):
         
         self._validate_mass_conservation(network, new_edge_flows, source_node_id, sink_node_ids, Q_total)
         
-        return node_pressures, new_edge_flows
+        return node_pressures, new_edge_flows, final_pressure_error
     
     def _initialize_flows(self, network: FlowNetwork, source_node_id: str, sink_node_ids: List[str],
                           Q_total: float) -> Dict[str, float]:

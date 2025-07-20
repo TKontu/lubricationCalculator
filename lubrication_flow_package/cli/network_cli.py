@@ -153,6 +153,78 @@ def simulate_network(config_file: str, output_file: Optional[str] = None, solver
     solver.print_results(network, solution,
                          pressure_unit=sim_config.output_pressure_unit,
                          flow_rate_unit=sim_config.output_flow_rate_unit)
+
+    # --- Add residual norm and reliability assessment ---
+    residual_norm = solution.get('final_residual_norm')
+    if residual_norm is not None:
+        print("\n--- Solution Quality ---")
+
+        # Default values
+        label = "Final Residual Norm"
+        assessment_text = ""
+
+        if solver_type == 'nodal':
+            label = "Max Pressure Consistency Error"
+            unit = "Pa"
+            inlet_pressure = solution.get('inlet_pressure', 0)
+            outlet_pressure = solution.get('outlet_pressure', 0)
+            pressure_span = abs(inlet_pressure - outlet_pressure)
+            
+            print(f"{label}: {residual_norm:.4e} {unit}")
+
+            if pressure_span > 1e-6:
+                relative_error = residual_norm / pressure_span
+                print(f"Relative Error (vs. pressure span): {relative_error * 100:.4f}%")
+                
+                relative_threshold = 1e-4 # 0.01% relative error tolerance
+                if relative_error < relative_threshold:
+                    assessment_text = "Result is considered reliable."
+                else:
+                    assessment_text = "Result may be unreliable due to high relative error."
+            else: # Low pressure system, fallback to absolute
+                if residual_norm < 1e-3:
+                    assessment_text = "Result is considered reliable (low pressure system)."
+                else:
+                    assessment_text = "Result may be unreliable (low pressure system)."
+
+        elif solver_type == 'tree_nonlinear':
+            label = "Flow Conservation Residual Norm"
+            unit = "m³/s"
+            total_flow = solution.get('total_flow_rate', 0)
+
+            print(f"{label}: {residual_norm:.4e} {unit}")
+
+            if total_flow > 1e-9:
+                relative_error = residual_norm / total_flow
+                print(f"Relative Error (vs. total flow): {relative_error * 100:.4f}%")
+                if relative_error < 1e-6:
+                    assessment_text = "Result is considered reliable."
+                else:
+                    assessment_text = "Result may be unreliable due to high relative error."
+            else: # Zero flow system
+                assessment_text = "Result is reliable (zero flow)."
+
+        elif solver_type == 'robust_newton':
+            label = "System Equation Residual Norm"
+            unit = "(mixed units)"
+            print(f"{label}: {residual_norm:.4e} {unit}")
+            # Cannot compute a simple relative error, so we use an absolute tolerance
+            # on the dimensionless residual of the scaled system equations.
+            if residual_norm < 1e-5:
+                assessment_text = "Result is considered reliable."
+            else:
+                assessment_text = "Result may be unreliable due to high residual error."
+        
+        else:
+            # Fallback for any other solver
+            print(f"{label}: {residual_norm:.4e}")
+            if residual_norm < 1e-5:
+                assessment_text = "Result is considered reliable."
+            else:
+                assessment_text = "Result may be unreliable due to high residual error."
+
+        print(f"Assessment: {assessment_text}")
+    # --- End of new section ---
     
     # Analyze system adequacy (if the method exists)
     if hasattr(solver, 'analyze_system_adequacy'):

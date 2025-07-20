@@ -105,7 +105,8 @@ class RobustNonLinearSolver(SolverBase):
             self._report_progress("Solver did not converge within the maximum number of iterations.")
 
         # 9. Post-process results
-        results = self._package_results(q_current, network, converged, iterations)
+        final_residual_norm = np.linalg.norm(self._evaluate_residual(q_current, network, cycles))
+        results = self._package_results(q_current, network, converged, iterations, final_residual_norm)
         return results
 
     def _line_search(self, q_current: np.ndarray, delta_q: np.ndarray, residual: np.ndarray, network: FlowNetwork, cycles: List[List[str]]) -> float:
@@ -313,7 +314,7 @@ class RobustNonLinearSolver(SolverBase):
 
         return True
 
-    def _package_results(self, q_vector: np.ndarray, network: FlowNetwork, converged: bool, iterations: int) -> Dict:
+    def _package_results(self, q_vector: np.ndarray, network: FlowNetwork, converged: bool, iterations: int, final_residual_norm: float) -> Dict:
         """
         Packages the final flow vector and calculates node pressures.
         """
@@ -326,6 +327,7 @@ class RobustNonLinearSolver(SolverBase):
         return {
             "converged": converged,
             "iterations": iterations,
+            "final_residual_norm": final_residual_norm,
             "component_flows": component_flows,
             "node_pressures": node_pressures,
             "inlet_pressure": inlet_pressure,

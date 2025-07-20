@@ -162,6 +162,10 @@ def main():
 
     if not solution.get('converged', False):
         print("Warning: Solver did not converge. Verification may not be meaningful.")
+    
+    final_residual = solution.get('final_residual_norm')
+    if final_residual is not None:
+        print(f"Final Residual Norm: {final_residual:.4e}")
 
     print("\n--- Verification Results ---")
 
