@@ -115,7 +115,7 @@ class SolverBase(ABC):
         total_flow_rate_disp, q_unit_str_disp = convert_flow_rate(total_outlet_flow, q_unit_str)
         print(f"\n  Total System Flow Rate: {total_flow_rate_disp:.2f} {q_unit_str_disp}")
         
-        inlet_pressure_key = 'inlet_pressure' if 'inlet_pressure' in solution_info else 'required_inlet_pressure'
+        inlet_pressure_key = 'inlet_pressure'
         inlet_pressure = solution_info.get(inlet_pressure_key, 0.0)
         inlet_pressure_disp, p_unit_str_disp = convert_pressure(inlet_pressure, p_unit_str)
         print(f"  Inlet Pressure:         {inlet_pressure_disp:.2f} {p_unit_str_disp}")
@@ -149,7 +149,7 @@ class SolverBase(ABC):
         print("PATH ANALYSIS")
         print(f"{'='*80}")
         header = (f"  {'Path to Outlet':<25} {'Outlet Flow (' + q_unit_str + ')':<20} "
-                  f"{'Total Pressure Drop (' + p_unit_str + ')':<25} {'Length (m)':<15} "
+                  f"{'Total Pressure Drop (' + p_unit_str_disp + ')':<25} {'Length (m)':<15} "
                   f"{'Weighted Dia (mm)':<20} {'Min Dia (mm)':<15}")
         print(header)
         print(f"  {'-'*25} {'-'*20} {'-'*25} {'-'*15} {'-'*20} {'-'*15}")
@@ -199,7 +199,7 @@ class SolverBase(ABC):
         print("PRESSURE AND FLOW DETAILS")
         print(f"{'='*80}")
         
-        print(f"  {'Component':<20} {'Type':<15} {'Flow Rate (' + q_unit_str + ')':<20} {'Pressure Drop (' + p_unit_str + ')':<20}")
+        print(f"  {'Component':<20} {'Type':<15} {'Flow Rate (' + q_unit_str + ')':<20} {'Pressure Drop (' + p_unit_str_disp + ')':<20}")
         print(f"  {'-'*20} {'-'*15} {'-'*20} {'-'*20}")
         
         for connection in network.connections:
@@ -216,7 +216,7 @@ class SolverBase(ABC):
             print(f"  {component.name:<20} {comp_type_str:<15} "
                   f"{flow_rate_disp:<20.3f} {pressure_drop_disp:<20.2f}")
         
-        print(f"\n  {'Node':<20} {'Pressure (' + p_unit_str + ')':<20} {'Elevation (m)':<15}")
+        print(f"  {'Node':<20} {'Pressure (' + p_unit_str_disp + ')':<20} {'Elevation (m)':<15}")
         print(f"  {'-'*20} {'-'*20} {'-'*15}")
         
         sorted_nodes = sorted(solution_info.get('node_pressures', {}).items(), key=lambda item: item[1], reverse=True)

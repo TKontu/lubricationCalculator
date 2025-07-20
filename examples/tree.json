@@ -135,7 +135,7 @@
       "output_units": "metric",
       "input_pressure_unit": "Pa",
       "input_flow_rate_unit": "l/min",
-      "output_pressure_unit": "bar",
+      "output_pressure_unit": "Pa",
       "output_flow_rate_unit": "l/min",
       "detailed_output": true,
       "save_results": false,

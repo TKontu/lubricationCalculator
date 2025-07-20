@@ -171,6 +171,13 @@ class NetworkConfigLoader:
         # Create a map of component data for easy lookup
         component_map = {comp['id']: comp for comp in config.components}
 
+        # First, create all nodes with their elevations
+        for node_data in config.nodes:
+            builder.add_node(
+                name=node_data['id'],
+                elevation=node_data.get('elevation', 0.0)
+            )
+
         # Set inlet and outlets first
         for node_data in config.nodes:
             node_id = node_data['id']

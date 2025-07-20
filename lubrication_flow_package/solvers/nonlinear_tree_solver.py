@@ -33,6 +33,7 @@ class TreeSolver(SolverBase):
             logging.config.fileConfig(logging_config_path, disable_existing_loggers=False)
             
         self.logger = logging.getLogger(__name__)
+        self.gravity = 9.81
 
 
     def solve(self, network: FlowNetwork) -> Dict:
@@ -223,12 +224,24 @@ class TreeSolver(SolverBase):
             for conn in network.connections:
                 if conn.from_node.id == node_id:
                     p_other = full_pressures[conn.to_node.id]
-                    pressure_drop = full_pressures[node_id] - p_other
+                    
+                    # Elevation correction
+                    z_from = conn.from_node.elevation
+                    z_to = conn.to_node.elevation
+                    dp_hydro = self.fluid_properties['density'] * self.gravity * (z_from - z_to)
+                    
+                    pressure_drop = (full_pressures[node_id] - p_other) + dp_hydro
                     flow = conn.component.calculate_flow_rate(pressure_drop, self.fluid_properties)
                     net_flow -= flow
                 elif conn.to_node.id == node_id:
                     p_other = full_pressures[conn.from_node.id]
-                    pressure_drop = p_other - full_pressures[node_id]
+
+                    # Elevation correction
+                    z_from = conn.from_node.elevation
+                    z_to = conn.to_node.elevation
+                    dp_hydro = self.fluid_properties['density'] * self.gravity * (z_from - z_to)
+
+                    pressure_drop = (p_other - full_pressures[node_id]) + dp_hydro
                     flow = conn.component.calculate_flow_rate(pressure_drop, self.fluid_properties)
                     net_flow += flow
             
@@ -263,7 +276,12 @@ class TreeSolver(SolverBase):
         for conn in network.connections:
             from_id, to_id = conn.from_node.id, conn.to_node.id
             
-            pressure_drop = full_pressures.get(from_id, 0) - full_pressures.get(to_id, 0)
+            # Elevation correction
+            z_from = conn.from_node.elevation
+            z_to = conn.to_node.elevation
+            dp_hydro = self.fluid_properties['density'] * self.gravity * (z_from - z_to)
+
+            pressure_drop = (full_pressures.get(from_id, 0) - full_pressures.get(to_id, 0)) + dp_hydro
             flow = conn.component.calculate_flow_rate(pressure_drop, self.fluid_properties)
             
             try:
@@ -354,7 +372,13 @@ class TreeSolver(SolverBase):
         for conn in network.connections:
             p_from = pressures[conn.from_node.id]
             p_to = pressures[conn.to_node.id]
-            dp = p_from - p_to
+            
+            # Elevation correction
+            z_from = conn.from_node.elevation
+            z_to = conn.to_node.elevation
+            dp_hydro = self.fluid_properties['density'] * self.gravity * (z_from - z_to)
+            
+            dp = (p_from - p_to) + dp_hydro
             component_flows[conn.component.id] = conn.component.calculate_flow_rate(dp, self.fluid_properties)
             
         # The total flow rate is a boundary condition from the simulation config.

@@ -4,7 +4,6 @@ Main CLI entry point for the lubrication flow calculator
 
 import argparse
 import sys
-from .network_cli import main as run_network_cli
 
 
 def main():
@@ -33,6 +32,9 @@ Examples:
     # Parse only the first argument to determine which subcommand to use
     if len(sys.argv) > 1:
         if sys.argv[1] == 'network':
+            # Defer import until it's needed to avoid circular import warnings
+            from .network_cli import main as run_network_cli
+            
             # Remove 'network' from argv and call network CLI
             sys.argv = [sys.argv[0]] + sys.argv[2:]
             run_network_cli()
