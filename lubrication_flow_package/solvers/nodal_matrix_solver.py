@@ -38,16 +38,18 @@ class NodalMatrixSolver(SolverBase):
     This is the canonical nodal solver for the project, consolidating all nodal solving functionality.
     """
     
-    def __init__(self, sim_config: SimulationConfig, 
+    def __init__(self, sim_config: SimulationConfig,
+                 progress_callback: Optional[Callable[[str], None]] = None,
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the nodal matrix solver.
         
         Args:
             sim_config: The simulation configuration object.
+            progress_callback: Optional callback for progress updates.
             logger: Optional logger for debugging output.
         """
-        super().__init__(sim_config)
+        super().__init__(sim_config, progress_callback)
 
         # Ensure logging is configured from logging.ini
         logging_config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'logging.ini')

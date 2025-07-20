@@ -31,6 +31,16 @@ The primary input is a network definition (from a JSON or XML file) and a set of
 - `tests/`: Unit and integration tests.
 - `main.py`: The main entry point for the CLI application.
 
+## Workflow Overview
+
+The simulation process follows a clear, three-step architectural pattern:
+
+1.  **Configuration Loading:** When a simulation is initiated, the `NetworkConfigLoader` class in the `config` module reads the specified JSON or XML file. It parses the data into a structured `NetworkConfig` object, which serves as a standardized, in-memory representation of the entire network definition.
+
+2.  **Network Building:** The `NetworkConfig` object is then passed to the `NetworkBuilder` utility. Following the **Builder design pattern**, this class provides a clean API to construct the final `FlowNetwork` object. It translates the lists of nodes, components, and connections from the configuration into a graph of instantiated `Node` and `Component` objects, ensuring the network is assembled correctly.
+
+3.  **Solving:** The constructed `FlowNetwork` is passed to the selected solver (e.g., `TreeSolver`). The solvers use numerical methods (specifically, the **Newton-Raphson method** for non-linear systems) to iteratively solve for the pressures at each node and the flow through each component. The iteration continues until the net flow at each internal node is balanced (conserving mass) to within a defined tolerance.
+
 ## Getting Started
 
 ### Installation
