@@ -13,7 +13,7 @@
     {
       "id": "junction1",
       "name": "Main Junction",
-      "elevation": 1.0,
+      "elevation": 5.0,
       "type": "junction",
       "x": 10.0,
       "y": 0.0
@@ -21,7 +21,7 @@
     {
       "id": "branch1_end",
       "name": "Branch 1 End",
-      "elevation": 2.0,
+      "elevation": 10.0,
       "type": "junction",
       "x": 18.0,
       "y": 5.0
@@ -29,7 +29,7 @@
     {
       "id": "branch2_end",
       "name": "Branch 2 End",
-      "elevation": 1.5,
+      "elevation": 10.0,
       "type": "junction",
       "x": 18.0,
       "y": -5.0
@@ -37,7 +37,7 @@
     {
       "id": "outlet1",
       "name": "Outlet 1",
-      "elevation": 2.0,
+      "elevation": 10.0,
       "type": "outlet",
       "x": 20.0,
       "y": 5.0
@@ -45,7 +45,7 @@
     {
       "id": "outlet2",
       "name": "Outlet 2",
-      "elevation": 1.5,
+      "elevation": 10.0,
       "type": "outlet",
       "x": 20.0,
       "y": -5.0
@@ -56,38 +56,36 @@
       "id": "main_channel",
       "name": "Main Channel",
       "type": "channel",
-      "diameter": 0.08,
-      "length": 10.0
+      "diameter": 0.048,
+      "length": 5.0
     },
     {
       "id": "branch1_channel",
       "name": "Branch 1 Channel",
       "type": "channel",
-      "diameter": 0.05,
-      "length": 8.0
+      "diameter": 0.02,
+      "length": 5.0
     },
     {
       "id": "branch2_channel",
       "name": "Branch 2 Channel",
       "type": "channel",
-      "diameter": 0.04,
-      "length": 6.0
+      "diameter": 0.03,
+      "length": 5.0
     },
     {
       "id": "nozzle1",
-      "name": "Nozzle1",
+      "name": "Outlet Nozzle 1",
       "type": "nozzle",
-      "nozzle_type": "standard_angle",
-      "size": 10,
-      "spray_angle": 95
-    },   
+      "diameter": 0.0035,
+      "nozzle_type": "sharp_edged"
+    },
     {
       "id": "nozzle2",
-      "name": "Nozzle2",
+      "name": "Outlet Nozzle 2",
       "type": "nozzle",
-      "nozzle_type": "standard_angle",
-      "size": 20,
-      "spray_angle": 95
+      "diameter": 0.0045,
+      "nozzle_type": "sharp_edged"
     }
   ],
   "connections": [
@@ -119,7 +117,7 @@
   ],
   "simulation": {
     "flow_parameters": {
-      "total_flow_rate": 0.015,
+      "total_flow_rate": 0.0001,
       "temperature": 40.0,
       "inlet_pressure": 200000.0,
       "outlet_pressure": null
@@ -135,6 +133,10 @@
     },
     "output_settings": {
       "output_units": "metric",
+      "input_pressure_unit": "Pa",
+      "input_flow_rate_unit": "l/min",
+      "output_pressure_unit": "Bar",
+      "output_flow_rate_unit": "l/min",
       "detailed_output": true,
       "save_results": false,
       "results_file": null

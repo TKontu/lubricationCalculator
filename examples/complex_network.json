@@ -4,7 +4,7 @@
   "simulation": {
     "flow_parameters": {
       "total_flow_rate": 124,
-      "temperature": 55.0,
+      "temperature": -20.0,
       "inlet_pressure": 300000.0,
       "outlet_pressure": 100000
     },

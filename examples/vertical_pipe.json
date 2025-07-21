@@ -11,20 +11,12 @@
       "y": 0.0
     },
     {
-      "id": "branch1_end",
-      "name": "Branch 1 End",
-      "elevation": 0.0,
-      "type": "junction",
-      "x": 10.0,
-      "y": 0.0
-    },
-    {
-      "id": "outlet1",
-      "name": "Outlet 1",
-      "elevation": 0.0,
+      "id": "outlet",
+      "name": "Outlet",
+      "elevation": 1000.0,
       "type": "outlet",
-      "x": 10.0,
-      "y": 0.0
+      "x": 20.0,
+      "y": -5.0
     }
   ],
   "components": [
@@ -32,39 +24,27 @@
       "id": "main_channel",
       "name": "Main Channel",
       "type": "channel",
-      "diameter": 0.02,
-      "length": 10.0
-    },
-    {
-      "id": "nozzle",
-      "name": "Nozzle",
-      "type": "nozzle",
-      "diameter": 0.002,
-      "nozzle_type": "sharp_edged"
+      "diameter": 0.1,
+      "length": 1000.0
     }
   ],
   "connections": [
     {
       "from_node": "inlet",
-      "to_node": "branch1_end",
+      "to_node": "outlet",
       "component": "main_channel"
-    },
-    {
-      "from_node": "branch1_end",
-      "to_node": "outlet1",
-      "component": "nozzle"
     }
   ],
   "simulation": {
     "flow_parameters": {
-      "total_flow_rate": 3.2,
-      "temperature": -10.0,
-      "inlet_pressure": 10000.0,
+      "total_flow_rate": 0.0001,
+      "temperature": 40.0,
+      "inlet_pressure": 200000.0,
       "outlet_pressure": null
     },
     "fluid_properties": {
       "oil_density": 900.0,
-      "oil_type": "VG320"
+      "oil_type": "SAE30"
     },
     "solver_settings": {
       "max_iterations": 100,
@@ -85,6 +65,6 @@
   "metadata": {
     "created_by": "manual",
     "version": "1.0",
-    "notes": "Simple pipe with a nozzle at the end for testing purposes."
+    "notes": "Simple tree network for testing and demonstration"
   }
 }

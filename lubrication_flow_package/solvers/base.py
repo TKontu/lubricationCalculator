@@ -118,7 +118,7 @@ class SolverBase(ABC):
         inlet_pressure_key = 'inlet_pressure'
         inlet_pressure = solution_info.get(inlet_pressure_key, 0.0)
         inlet_pressure_disp, p_unit_str_disp = convert_pressure(inlet_pressure, p_unit_str)
-        print(f"  Inlet Pressure:         {inlet_pressure_disp:.2f} {p_unit_str_disp}")
+        print(f"  Inlet Pressure:         {inlet_pressure_disp:.2f} {p_unit_str_disp}, absolute")
         
         converged = solution_info.get('converged', False)
         iterations = solution_info.get('iterations', 'N/A')
