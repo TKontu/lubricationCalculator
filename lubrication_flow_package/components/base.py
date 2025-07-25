@@ -97,3 +97,9 @@ class FlowComponent:
         """Get maximum recommended velocity for this component type"""
         # Default conservative velocity limit
         return 10.0  # m/s
+
+    @classmethod
+    def from_config(cls, config: Dict) -> 'FlowComponent':
+        """Create a component instance from a configuration dictionary."""
+        # This method should be implemented by subclasses
+        raise NotImplementedError(f"from_config is not implemented for {cls.__name__}")

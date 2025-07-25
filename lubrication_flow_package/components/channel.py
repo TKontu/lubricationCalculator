@@ -123,7 +123,17 @@ class Channel(FlowComponent):
         p1 = self.calculate_pressure_drop(flow_rate, fluid_properties)
         p2 = self.calculate_pressure_drop(flow_rate + delta_q, fluid_properties)
         
-        differential_resistance = (p2 - p1) / delta_q
+        differential_resistance = 2 * p1 / flow_rate if flow_rate != 0 else 0
         
-        # Ensure resistance is positive
         return max(differential_resistance, 1e-9)
+
+    @classmethod
+    def from_config(cls, config: Dict) -> 'Channel':
+        """Create a Channel instance from a configuration dictionary."""
+        return Channel(
+            length=config['length'],
+            diameter=config['diameter'],
+            roughness=config.get('roughness', 0.00015),
+            component_id=config.get('id'),
+            name=config.get('name')
+        )

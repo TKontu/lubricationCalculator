@@ -154,6 +154,18 @@ class NetworkBuilder:
         self._network._connect_components(from_node=from_node, to_node=to_node, component=fitting)
         return self
 
+    def add_component(self, from_node_name: str, to_node_name: str, component: FlowComponent,
+                      from_node_elevation: Optional[float] = None,
+                      to_node_elevation: Optional[float] = None) -> 'NetworkBuilder':
+        """
+        Adds a pre-created component between two nodes.
+        """
+        from_node = self._get_or_create_node(from_node_name, elevation=from_node_elevation)
+        to_node = self._get_or_create_node(to_node_name, elevation=to_node_elevation)
+        
+        self._network._connect_components(from_node=from_node, to_node=to_node, component=component)
+        return self
+
     def add_tee_junction(self, main_in: str, main_out: str, branch_out: str, 
                          tee_node_name: str, diameter: float,
                          main_in_elevation: Optional[float] = None,

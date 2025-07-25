@@ -140,6 +140,24 @@ class Nozzle(FlowComponent):
         differential_resistance = 2 * pressure_drop / flow_rate if flow_rate != 0 else 0
         
         return max(differential_resistance, 1e-9)
+
+    @classmethod
+    def from_config(cls, config: Dict) -> 'Nozzle':
+        """Create a Nozzle instance from a configuration dictionary."""
+        nozzle_type_str = config.get('nozzle_type')
+        if nozzle_type_str:
+            nozzle_type = NozzleType(nozzle_type_str)
+            if nozzle_type == NozzleType.STANDARD_ANGLE:
+                return StandardAngleSprayNozzle.from_config(config)
+
+        # Default to a standard Nozzle if not a special type
+        return Nozzle(
+            diameter=config['diameter'],
+            nozzle_type=NozzleType(config.get('nozzle_type', 'sharp_edged')),
+            discharge_coeff=config.get('discharge_coeff'),
+            component_id=config.get('id'),
+            name=config.get('name')
+        )
     
 
 class StandardAngleSprayNozzle(Nozzle):
@@ -203,5 +221,18 @@ class StandardAngleSprayNozzle(Nozzle):
         return self._q3bar_m3s * math.sqrt(max(pressure_drop, 0.0) / self.REF_PRESSURE_PA)
 
     def calculate_flow_rate(self, pressure_drop: float, fluid_properties: Dict) -> float:
+        """
+        Calculate flow rate for a given pressure drop.
+        """
         return self.get_flow_rate_for_pressure(pressure_drop)
+
+    @classmethod
+    def from_config(cls, config: Dict) -> 'StandardAngleSprayNozzle':
+        """Create a StandardAngleSprayNozzle instance from a configuration dictionary."""
+        return StandardAngleSprayNozzle(
+            size=config['size'],
+            spray_angle=config.get('spray_angle', 95.0),
+            component_id=config.get('id'),
+            name=config.get('name')
+        )
 

@@ -432,3 +432,13 @@ class Connector(FlowComponent):
             'fixed_loss_coefficient': self._fixed_loss_coefficient,
             'current_loss_coefficient': self.loss_coefficient
         }
+
+    @classmethod
+    def from_config(cls, config: Dict) -> 'Connector':
+        """Create a Connector instance from a configuration dictionary."""
+        return Connector(
+            diameter=config['diameter'],
+            connector_type=ConnectorType(config['connector_type']),
+            component_id=config.get('id'),
+            name=config.get('name')
+        )

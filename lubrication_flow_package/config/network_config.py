@@ -198,30 +198,19 @@ class NetworkConfigLoader:
             comp_data = component_map[comp_id]
             comp_type = comp_data.get('type')
             
-            if comp_type == 'channel':
-                builder.add_pipe(
+            component_class_map = {
+                'channel': Channel,
+                'nozzle': Nozzle,
+                'connector': Connector
+            }
+            
+            if comp_type in component_class_map:
+                ComponentClass = component_class_map[comp_type]
+                component = ComponentClass.from_config(comp_data)
+                builder.add_component(
                     from_node_name=from_node,
                     to_node_name=to_node,
-                    length=comp_data['length'],
-                    diameter=comp_data['diameter'],
-                    roughness=comp_data.get('roughness', 0.00015),
-                    name=comp_data.get('name', comp_id)
-                )
-            elif comp_type == 'nozzle':
-                builder.add_nozzle(
-                    from_node_name=from_node,
-                    to_node_name=to_node,
-                    diameter=comp_data['diameter'],
-                    nozzle_type=NozzleType(comp_data.get('nozzle_type', 'standard_angle')),
-                    name=comp_data.get('name', comp_id)
-                )
-            elif comp_type == 'connector':
-                builder.add_fitting(
-                    from_node_name=from_node,
-                    to_node_name=to_node,
-                    connector_type=ConnectorType(comp_data.get('connector_type')),
-                    diameter=comp_data['diameter'],
-                    name=comp_data.get('name', comp_id)
+                    component=component
                 )
             else:
                 raise ValueError(f"Unknown component type: {comp_type}")
