@@ -1,0 +1,132 @@
+{
+  "network_name": "Junction with Different Nozzles",
+  "description": "A network with a single junction splitting flow into two equal branches, each ending with a different standard angle spray nozzle.",
+  "nodes": [
+    {
+      "id": "inlet",
+      "name": "Main Inlet",
+      "elevation": 0.0,
+      "type": "inlet"
+    },
+    {
+      "id": "junction",
+      "name": "Flow Split Junction",
+      "elevation": 0.0,
+      "type": "junction"
+    },
+    {
+      "id": "branch1_end",
+      "name": "Branch 1 End",
+      "elevation": 0.0,
+      "type": "junction"
+    },
+    {
+      "id": "branch2_end",
+      "name": "Branch 2 End",
+      "elevation": 0.0,
+      "type": "junction"
+    },
+    {
+      "id": "outlet1",
+      "name": "Outlet 1 (Nozzle A)",
+      "elevation": 0.0,
+      "type": "outlet"
+    },
+    {
+      "id": "outlet2",
+      "name": "Outlet 2 (Nozzle B)",
+      "elevation": 0.0,
+      "type": "outlet"
+    }
+  ],
+  "components": [
+    {
+      "id": "main_pipe",
+      "name": "Inlet Pipe",
+      "type": "channel",
+      "length": 2.0,
+      "diameter": 0.05
+    },
+    {
+      "id": "branch1_pipe",
+      "name": "Branch Pipe 1",
+      "type": "channel",
+      "length": 2.0,
+      "diameter": 0.02
+    },
+    {
+      "id": "branch2_pipe",
+      "name": "Branch Pipe 2",
+      "type": "channel",
+      "length": 2.0,
+      "diameter": 0.02
+    },
+    {
+      "id": "nozzle_A",
+      "name": "Small Nozzle",
+      "type": "nozzle",
+      "nozzle_type": "standard_angle",
+      "size": 15
+    },
+    {
+      "id": "nozzle_B",
+      "name": "Large Nozzle",
+      "type": "nozzle",
+      "nozzle_type": "standard_angle",
+      "size": 40
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "inlet",
+      "to_node": "junction",
+      "component": "main_pipe"
+    },
+    {
+      "from_node": "junction",
+      "to_node": "branch1_end",
+      "component": "branch1_pipe"
+    },
+    {
+      "from_node": "junction",
+      "to_node": "branch2_end",
+      "component": "branch2_pipe"
+    },
+    {
+      "from_node": "branch1_end",
+      "to_node": "outlet1",
+      "component": "nozzle_A"
+    },
+    {
+      "from_node": "branch2_end",
+      "to_node": "outlet2",
+      "component": "nozzle_B"
+    }
+  ],
+  "simulation": {
+    "flow_parameters": {
+      "total_flow_rate": 10,
+      "temperature": 40.0,
+      "inlet_pressure": 300000.0
+    },
+    "fluid_properties": {
+      "oil_density": 870.0,
+      "oil_type": "VG320"
+    },
+    "solver_settings": {
+      "max_iterations": 100,
+      "tolerance": 1e-6,
+      "relaxation_factor": 0.8
+    },
+    "output_settings": {
+      "output_units": "metric",
+      "input_pressure_unit": "Pa",
+      "input_flow_rate_unit": "l/min",
+      "output_pressure_unit": "bar",
+      "output_flow_rate_unit": "l/min",
+      "detailed_output": true,
+      "save_results": false,
+      "results_file": null
+    }
+  }
+}
