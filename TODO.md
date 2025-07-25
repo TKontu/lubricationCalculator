@@ -1,6 +1,42 @@
-# TreeSolver Refactoring Plan
+# TODO.md
 
-## Phase 1: Solver Robustness Improvements (High Priority)
+## GUI Refactoring Plan
+
+### Core Functionality
+
+- [ ] **Integrate Configuration Management:**
+  - [ ] Add menu bar with "File" -> "Open", "Save", "Save As...".
+  - [ ] Use `NetworkConfigLoader` to load JSON/XML files.
+  - [ ] Use `NetworkConfigSaver` to save network and simulation state.
+- [ ] **Refactor Simulation Workflow:**
+  - [ ] Create `SimulationController` to decouple logic from UI.
+  - [ ] Add a solver selection dropdown to the sidebar.
+  - [ ] Use the unified `solver.solve(network)` method.
+- [ ] **Display Results:**
+  - [ ] Show numerical results in a text area.
+  - [ ] Visualize results (pressures/flows) on the network graph.
+
+### UI/UX Improvements
+
+- [ ] **Refactor UI Components:**
+  - [ ] `app.py`: Main window with menu and layout orchestration.
+  - [ ] `canvas.py`: Responsible for rendering the network graph.
+  - [ ] `sidebar.py`: Controls for simulation, solver selection, and results.
+  - [ ] `dialogs.py`: Property editing for network components.
+- [ ] **Dynamic Content:**
+  - [ ] Populate simulation settings from the loaded `SimulationConfig`.
+  - [ ] Update the network view when a new configuration is loaded.
+
+### Advanced Features (Future)
+
+- [ ] **Interactive Network Editing:**
+  - [ ] Add/delete nodes and components directly on the canvas.
+  - [ ] Edit component properties through dialogs.
+  - [ ] Ensure changes are reflected in the underlying `FlowNetwork` object.
+
+## TreeSolver Refactoring Plan
+
+### Phase 1: Solver Robustness Improvements (High Priority)
 
 - [ ] **Adaptive Stagnation Detection**
 
@@ -17,7 +53,7 @@
   - No check for tree-like structure
   - Action: Add cycle detection and validate topology
 
-## Phase 2: Convergence Enhancements (Medium Priority)
+### Phase 2: Convergence Enhancements (Medium Priority)
 
 - [ ] **Jacobian Conditioning and Monitoring**
 
@@ -32,7 +68,7 @@
 - [ ] **Enhanced Convergence Criteria**
   - Implement adaptive tolerances and early termination
 
-## Phase 3: Code Quality and Maintainability (Low Priority)
+### Phase 3: Code Quality and Maintainability (Low Priority)
 
 - [ ] **Code Clarity and Refactoring**
 
