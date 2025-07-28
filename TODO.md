@@ -9,8 +9,8 @@
   - [ ] Use `NetworkConfigLoader` to load JSON/XML files.
   - [ ] Use `NetworkConfigSaver` to save network and simulation state.
 - [ ] **Refactor Simulation Workflow:**
-  - [ ] Create `SimulationController` to decouple logic from UI.
-  - [ ] Add a solver selection dropdown to the sidebar.
+  - [x] Create `SimulationController` to decouple logic from UI.
+  - [x] Add a solver selection dropdown to the sidebar.
   - [ ] Use the unified `solver.solve(network)` method.
 - [ ] **Display Results:**
   - [ ] Show numerical results in a text area.

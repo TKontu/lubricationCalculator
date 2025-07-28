@@ -80,7 +80,7 @@
       "nozzle_type": "standard_angle",
       "size": 10,
       "spray_angle": 95
-    },   
+    },
     {
       "id": "nozzle2",
       "name": "Nozzle2",
@@ -130,7 +130,7 @@
     },
     "solver_settings": {
       "max_iterations": 100,
-      "tolerance": 1e-6,
+      "tolerance": 1e-06,
       "relaxation_factor": 0.8
     },
     "output_settings": {
@@ -138,7 +138,10 @@
       "detailed_output": true,
       "save_results": false,
       "results_file": null
-    }
+    },
+    "total_flow_rate": 0.02,
+    "temperature": 50.0,
+    "inlet_pressure": 300000.0
   },
   "metadata": {
     "created_by": "manual",

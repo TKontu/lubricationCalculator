@@ -85,8 +85,10 @@ class Sidebar(QWidget):
 
     def populate_solvers(self, solvers: list[str]):
         """Populates the solver selection dropdown."""
+        self.solver_combo.blockSignals(True)
         self.solver_combo.clear()
         self.solver_combo.addItems(solvers)
+        self.solver_combo.blockSignals(False)
 
     def get_simulation_settings(self) -> Dict[str, float]:
         """Returns the current simulation settings from the UI."""
