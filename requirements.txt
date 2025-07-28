@@ -5,3 +5,9 @@ PyYAML>=6.0
 matplotlib>=3.5.0
 networkx>=2.7.0
 pytest>=8.4.1
+
+# Optional dependencies for GUI
+PyQt5>=5.15.0
+qtpy>=2.0.0
+qdarkstyle>=3.0.0
+pytest-qt>=4.2.0
