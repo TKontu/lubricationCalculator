@@ -1,56 +1,65 @@
-import tkinter as tk
-from tkinter import ttk, simpledialog
+"""
+Dynamic dialogs for editing properties in the GUI.
+"""
+from PyQt5.QtWidgets import (
+    QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QLineEdit, 
+    QComboBox, QLabel
+)
 
-class PropertiesEditor(ttk.Frame):
-    def __init__(self, parent, app):
+class PropertiesDialog(QDialog):
+    """
+    A dynamic dialog for editing a dictionary of properties.
+    """
+    def __init__(self, element_id, properties, parent=None):
         super().__init__(parent)
-        self.app = app
-        self.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.setWindowTitle(f"Properties for {element_id}")
+        
+        self.layout = QVBoxLayout(self)
+        
+        self.form_layout = QFormLayout()
         self.entries = {}
-
-    def show_properties(self, element_id, properties):
-        for widget in self.winfo_children():
-            widget.destroy()
-        self.entries.clear()
-
-        ttk.Label(self, text=f"Properties for {element_id}").pack(pady=5)
 
         for key, value in properties.items():
-            frame = ttk.Frame(self)
-            frame.pack(fill=tk.X, padx=5, pady=2)
-            label = ttk.Label(frame, text=f"{key}:")
-            label.pack(side=tk.LEFT)
+            # Make keys more readable for labels
+            label_text = key.replace('_', ' ').title()
+            
             if key == 'type':
-                entry = ttk.Combobox(frame, values=["Node", "inlet", "outlet"])
-                entry.set(value)
+                # Use a dropdown for 'type' if it's a node
+                # In the future, this could be expanded for component types
+                entry = QComboBox()
+                entry.addItems(['internal', 'inlet', 'outlet'])
+                entry.setCurrentText(str(value))
             else:
-                entry = ttk.Entry(frame)
-                entry.insert(0, str(value))
-            entry.pack(side=tk.RIGHT, expand=True, fill=tk.X)
+                entry = QLineEdit(str(value))
+            
             self.entries[key] = entry
+            self.form_layout.addRow(QLabel(label_text), entry)
 
-        save_button = ttk.Button(self, text="Save", command=lambda: self.save_properties(element_id))
-        save_button.pack(pady=5)
+        self.layout.addLayout(self.form_layout)
+        
+        # Standard dialog buttons
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        
+        self.layout.addWidget(self.button_box)
 
-    def save_properties(self, element_id):
-        new_properties = {key: entry.get() for key, entry in self.entries.items()}
-        self.app.update_element_properties(element_id, new_properties)
+    def get_properties(self):
+        """
+        Returns the updated properties from the dialog entries.
+        It attempts to convert values to float where possible.
+        """
+        updated_properties = {}
+        for key, entry in self.entries.items():
+            if isinstance(entry, QComboBox):
+                value = entry.currentText()
+            else:
+                value = entry.text()
 
-class ComponentDialog(simpledialog.Dialog):
-    def __init__(self, parent, title, component_type, properties):
-        self.component_type = component_type
-        self.properties = properties
-        super().__init__(parent, title=title)
-
-    def body(self, master):
-        self.entries = {}
-        for key, value in self.properties.items():
-            ttk.Label(master, text=f"{key}:").grid(row=len(self.entries), sticky=tk.W)
-            entry = ttk.Entry(master)
-            entry.insert(0, str(value))
-            entry.grid(row=len(self.entries), column=1, padx=5, pady=5)
-            self.entries[key] = entry
-        return self.entries[list(self.properties.keys())[0]]
-
-    def apply(self):
-        self.result = {key: float(entry.get()) for key, entry in self.entries.items()}
+            try:
+                # Attempt to convert to float, otherwise keep as string
+                updated_properties[key] = float(value)
+            except ValueError:
+                updated_properties[key] = value
+                
+        return updated_properties

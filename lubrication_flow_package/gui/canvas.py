@@ -81,14 +81,63 @@ class NetworkCanvas(QWidget):
         self._autoscale_view(pos)
         self.canvas.draw()
 
-    def _draw_orthogonal_edges(self, pos, edge_color='gray'):
-        """Draws edges as orthogonal lines."""
-        for u, v in self.graph.edges():
+    def _draw_orthogonal_edges(self, pos, edge_color='gray', component_flows=None):
+        """
+        Draws edges as orthogonal lines, avoiding overlaps with intelligent sorting.
+        """
+        # Step 1: Collect all path segments for each edge
+        edge_paths = {}
+        for u, v, d in self.graph.edges(data=True):
             x1, y1 = pos[u]
             x2, y2 = pos[v]
-            # Draw horizontal segment first, then vertical
-            self.ax.plot([x1, x2], [y1, y1], color=edge_color, zorder=1)
-            self.ax.plot([x2, x2], [y1, y2], color=edge_color, zorder=1)
+            edge_key = (u, v, d.get('component', ''))
+            
+            # Simple orthogonal path: one horizontal, one vertical segment
+            path = [
+                {'key': ('h', y1, min(x1, x2), max(x1, x2)), 'coords': (x1, y1, x2, y1), 'edge': edge_key},
+                {'key': ('v', x2, min(y1, y2), max(y1, y2)), 'coords': (x2, y1, x2, y2), 'edge': edge_key}
+            ]
+            edge_paths[edge_key] = path
+
+        # Step 2: Group segments that are geometrically identical
+        segment_groups = {}
+        for edge_key, path in edge_paths.items():
+            for segment in path:
+                key = segment['key']
+                if key not in segment_groups:
+                    segment_groups[key] = []
+                segment_groups[key].append(segment)
+
+        # Step 3: Sort segments within each group to ensure intuitive crossings
+        for key, segments in segment_groups.items():
+            if len(segments) > 1:
+                # Sort based on the destination of the edge path
+                if key[0] == 'h': # Horizontal segment, sort by destination Y
+                    segments.sort(key=lambda s: pos[s['edge'][1]][1])
+                else: # Vertical segment, sort by destination X
+                    segments.sort(key=lambda s: pos[s['edge'][1]][0])
+
+        # Step 4: Draw the segments with calculated offsets
+        offset_scale = 0.2
+        for key, segments in segment_groups.items():
+            total = len(segments)
+            for i, segment in enumerate(segments):
+                offset = (i - (total - 1) / 2.0) * offset_scale
+                x1, y1, x2, y2 = segment['coords']
+                
+                if key[0] == 'h': # Horizontal
+                    self.ax.plot([x1, x2], [y1 + offset, y2 + offset], color=edge_color, zorder=1)
+                    
+                    # Add label if this is the primary segment for the edge
+                    if component_flows and segment['edge'] in edge_paths:
+                        u, v, component_id = segment['edge']
+                        # Check if this is the horizontal part of the path for labeling
+                        if key == edge_paths[(u, v, component_id)][0]['key']:
+                            label = f"{component_flows.get(component_id, 0):.4f}"
+                            self.ax.text((x1 + x2) / 2, y1 + offset, label, ha='center', va='center', fontsize=8, color='blue', zorder=4,
+                                         bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.2'))
+                else: # Vertical
+                    self.ax.plot([x1 + offset, x2 + offset], [y1, y2], color=edge_color, zorder=1)
 
     def _autoscale_view(self, pos):
         """Zooms the view to fit the graph with a margin."""
@@ -104,8 +153,8 @@ class NetworkCanvas(QWidget):
         dx = max_x - min_x
         dy = max_y - min_y
         
-        margin_x = dx * 0.15 or 10
-        margin_y = dy * 0.15 or 10
+        margin_x = dx * 0.2 or 10
+        margin_y = dy * 0.2 or 10
         
         self.ax.set_xlim(min_x - margin_x, max_x + margin_x)
         self.ax.set_ylim(min_y - margin_y, max_y + margin_y)
@@ -171,15 +220,8 @@ class NetworkCanvas(QWidget):
             x, y = pos[node_id]
             self.ax.text(x, y, node_id, ha='center', va='center', color=text_color, zorder=3, fontsize=9)
 
-        self._draw_orthogonal_edges(pos)
-
-        # Draw edge labels on the horizontal segment with a solid background
-        for u, v, d in self.graph.edges(data=True):
-            x1, y1 = pos[u]
-            x2, y2 = pos[v]
-            label = f"{component_flows.get(d.get('component'), 0):.4f}"
-            self.ax.text((x1 + x2) / 2, y1, label, ha='center', va='center', fontsize=8, color='blue', zorder=4,
-                         bbox=dict(facecolor='white', alpha=1.0, edgecolor='none', boxstyle='round,pad=0.2'))
+        # Draw edges and their labels
+        self._draw_orthogonal_edges(pos, component_flows=component_flows)
         
         self.ax.grid(True)
         self._autoscale_view(pos)

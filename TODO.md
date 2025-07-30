@@ -3,33 +3,38 @@
 ## GUI Development
 
 ### Core Functionality
+
 - [ ] **Interactive Network Building:**
-    - [ ] Implement features to build a flow network from scratch within the GUI.
-    - [ ] Add/delete nodes and components directly on the canvas.
-    - [ ] Connect components to build the network graph visually.
+  - [ ] Implement features to build a flow network from scratch within the GUI.
+  - [ ] Add/delete nodes and components directly on the canvas.
+  - [ ] Connect components to build the network graph visually.
 - [ ] **Full Element Configuration:**
-    - [ ] Allow editing of all properties for nodes, elements, and components (e.g., name, connections, pipe size, length, elevation, x/y position).
-    - [ ] Implement dialogs or property editors for each element type.
+  - [ ] Allow editing of all properties for nodes, elements, and components (e.g., name, connections, pipe size, length, elevation, x/y position).
+  - [ ] Implement dialogs or property editors for each element type.
 - [ ] **Configurable Units:**
-    - [ ] Add options in the GUI to select input and output units (e.g., pressure in Pa/psi, flow in m³/s/gpm).
-    - [ ] Ensure all displayed values and inputs respect the selected units.
+  - [ ] Add options in the GUI to select input and output units (e.g., pressure in Pa/psi, flow in m³/s/gpm).
+  - [ ] Ensure all displayed values and inputs respect the selected units.
 - [ ] **Complete Simulation Settings:**
-    - [ ] Make all simulation settings from `SimulationConfig` configurable in the GUI.
+  - [ ] Make all simulation settings from `SimulationConfig` configurable in the GUI.
 - [ ] **Display Results:**
-    - [ ] Show numerical results in a text area.
-    - [ ] Visualize results (pressures/flows) on the network graph.
+  - [ ] Show numerical results in a text area.
+  - [ ] Visualize results (pressures/flows) on the network graph.
+- [ ] **Print results:**
+  - [ ] Create text based short report, which shows the graph and a results table
+  - [ ] Export report in pdf format
 
 ### UI/UX Improvements
+
 - [ ] **Improved Edge Rendering:**
-    - [ ] Update plot drawing so that edges do not overlap unless they are crossing.
+  - [ ] Update plot drawing so that edges do not overlap unless they are crossing.
 - [ ] **Refactor UI Components:**
-    - [ ] `app.py`: Main window with menu and layout orchestration.
-    - [ ] `canvas.py`: Responsible for rendering the network graph.
-    - [ ] `sidebar.py`: Controls for simulation, solver selection, and results.
-    - [ ] `dialogs.py`: Property editing for network components.
+  - [ ] `app.py`: Main window with menu and layout orchestration.
+  - [ ] `canvas.py`: Responsible for rendering the network graph.
+  - [ ] `sidebar.py`: Controls for simulation, solver selection, and results.
+  - [ ] `dialogs.py`: Property editing for network components.
 - [ ] **Dynamic Content:**
-    - [ ] Populate simulation settings from the loaded `SimulationConfig`.
-    - [ ] Update the network view when a new configuration is loaded.
+  - [ ] Populate simulation settings from the loaded `SimulationConfig`.
+  - [ ] Update the network view when a new configuration is loaded.
 
 ## TreeSolver Refactoring Plan
 
